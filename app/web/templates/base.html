@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Chek_NVR{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body class="bg-light">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/">📹 Chek_NVR</a>
+      <div class="navbar-nav me-auto">
+        <a class="nav-link" href="/">Tổng quan</a>
+        <a class="nav-link" href="/nvrs">Danh sách NVR</a>
+        <a class="nav-link" href="/reports">Báo cáo</a>
+        <a class="nav-link" href="/alerts">Cảnh báo</a>
+        {% if request.state.role == 'admin' %}
+        <a class="nav-link" href="/users">Người dùng</a>
+        {% endif %}
+      </div>
+      {% if request.state.username %}
+      <div class="navbar-nav">
+        <a class="nav-link" href="/account">
+          👤 {{ request.state.username }}
+          <span class="badge text-bg-{{ 'warning' if request.state.role == 'admin' else 'secondary' }}">{{ request.state.role }}</span>
+        </a>
+        <form method="post" action="/logout" class="d-inline ms-2">
+          <button type="submit" class="btn btn-sm btn-outline-light">Đăng xuất</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </nav>
+  <div class="container-fluid">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

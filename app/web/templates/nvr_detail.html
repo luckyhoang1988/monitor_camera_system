@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}{{ nvr.name }} — Chek_NVR{% endblock %}
+{% block content %}
+<a href="/nvrs" class="btn btn-sm btn-outline-secondary mb-3">← Danh sách</a>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">
+    {{ nvr.name }}
+    <span class="badge text-bg-{{ nvr.current_status | badge }}">{{ nvr.current_status }}</span>
+  </h3>
+  {% if request.state.role == 'admin' %}
+  <div>
+    <form method="post" action="/nvrs/{{ nvr.id }}/check" class="d-inline">
+      <button type="submit" class="btn btn-success btn-sm">🔄 Kiểm tra ngay</button>
+    </form>
+    <a href="/nvrs/{{ nvr.id }}/edit" class="btn btn-outline-secondary btn-sm">Sửa</a>
+    <form method="post" action="/nvrs/{{ nvr.id }}/delete" class="d-inline"
+          onsubmit="return confirm('Xóa NVR {{ nvr.name }}?');">
+      <button type="submit" class="btn btn-outline-danger btn-sm">Xóa</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<div class="row">
+  <div class="col-md-4">
+    <div class="card mb-3"><div class="card-body">
+      <h6 class="card-title">Thông tin thiết bị</h6>
+      <table class="table table-sm mb-0">
+        <tr><th>IP/Domain</th><td>{{ nvr.host }}:{{ nvr.http_port }}</td></tr>
+        <tr><th>Vị trí</th><td>{{ nvr.location or "—" }}</td></tr>
+        <tr><th>Khu vực</th><td>{{ nvr.area or "—" }}</td></tr>
+        <tr><th>Model</th><td>{{ nvr.model or "—" }}</td></tr>
+        <tr><th>Serial</th><td>{{ nvr.serial or "—" }}</td></tr>
+        <tr><th>Firmware</th><td>{{ nvr.firmware or "—" }}</td></tr>
+        <tr><th>Kiểm tra cuối</th><td>{{ nvr.last_checked_at | localtime }}</td></tr>
+        <tr><th>Lỗi gần nhất</th><td>{{ nvr.last_error or "—" }}</td></tr>
+      </table>
+    </div></div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="card mb-3"><div class="card-body">
+      <h6 class="card-title">Camera ({{ cameras | length }})</h6>
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr>
+          <th>Kênh</th><th>Tên</th><th>IP</th><th>Trạng thái</th><th>Kiểm tra cuối</th>
+        </tr></thead>
+        <tbody>
+          {% for c in cameras %}
+          <tr>
+            <td>{{ c.channel_no }}</td>
+            <td>{{ c.name or "—" }}</td>
+            <td>{{ c.camera_ip or "—" }}</td>
+            <td><span class="badge text-bg-{{ c.current_status | badge }}">{{ c.current_status }}</span></td>
+            <td>{{ c.last_checked_at | localtime }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-3">Chưa có dữ liệu camera.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+      <h6 class="card-title">Lịch sử trạng thái gần đây</h6>
+      <table class="table table-sm mb-0">
+        <thead class="table-light"><tr><th>Thời điểm</th><th>Trạng thái</th><th>Phản hồi (ms)</th><th>Lỗi</th></tr></thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td>{{ log.checked_at | localtime }}</td>
+            <td><span class="badge text-bg-{{ log.status | badge }}">{{ log.status }}</span></td>
+            <td>{{ log.response_time_ms if log.response_time_ms is not none else "—" }}</td>
+            <td>{{ log.error_msg or "" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-center text-muted py-3">Chưa có log.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

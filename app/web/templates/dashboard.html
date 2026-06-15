@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Tổng quan — Chek_NVR{% endblock %}
+{% block content %}
+<h3 class="mb-4">Tổng quan hệ thống</h3>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card text-bg-primary"><div class="card-body">
+      <h6 class="card-title">Tổng NVR</h6>
+      <p class="display-6 mb-0">{{ overview.nvr_total }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-bg-success"><div class="card-body">
+      <h6 class="card-title">NVR Online</h6>
+      <p class="display-6 mb-0">{{ overview.nvr_online }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-bg-danger"><div class="card-body">
+      <h6 class="card-title">NVR Offline</h6>
+      <p class="display-6 mb-0">{{ overview.nvr_offline }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-bg-warning"><div class="card-body">
+      <h6 class="card-title">NVR Warning</h6>
+      <p class="display-6 mb-0">{{ overview.nvr_warning }}</p>
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-3">
+    <div class="card"><div class="card-body">
+      <h6 class="card-title text-muted">Tổng camera</h6>
+      <p class="display-6 mb-0">{{ overview.camera_total }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-success"><div class="card-body">
+      <h6 class="card-title text-success">Camera Online</h6>
+      <p class="display-6 mb-0">{{ overview.camera_online }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-danger"><div class="card-body">
+      <h6 class="card-title text-danger">Camera Offline</h6>
+      <p class="display-6 mb-0">{{ overview.camera_offline }}</p>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-info"><div class="card-body">
+      <h6 class="card-title text-info">Tỷ lệ hoạt động</h6>
+      <p class="display-6 mb-0">{{ overview.uptime_ratio }}%</p>
+    </div></div>
+  </div>
+</div>
+
+<div class="card mt-4 border-danger">
+  <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+    <span>📷 Camera đang mất tín hiệu</span>
+    <span class="badge text-bg-light">{{ offline_cameras | length }}</span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0 align-middle">
+      <thead class="table-light"><tr>
+        <th>Đầu ghi (NVR)</th><th>Khu vực</th><th>Kênh</th><th>Tên camera</th>
+        <th>IP</th><th>Trạng thái</th><th>Kiểm tra cuối</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for row in offline_cameras %}
+        <tr>
+          <td>
+            <a href="/nvrs/{{ row.camera.nvr_id }}" class="fw-semibold text-decoration-none">
+              {{ row.nvr_name }}
+            </a>
+          </td>
+          <td>{{ row.nvr_area or "—" }}</td>
+          <td>{{ row.camera.channel_no }}</td>
+          <td>{{ row.camera.name or "—" }}</td>
+          <td>{{ row.camera.camera_ip or "—" }}</td>
+          <td><span class="badge text-bg-{{ row.camera.current_status | badge }}">{{ row.camera.current_status }}</span></td>
+          <td>{{ row.camera.last_checked_at | localtime }}</td>
+          <td>
+            <a href="/nvrs/{{ row.camera.nvr_id }}" class="btn btn-outline-primary btn-sm">
+              Tới đầu ghi →
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-center text-success py-3">
+          Tất cả camera đang hoạt động bình thường. 🎉
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

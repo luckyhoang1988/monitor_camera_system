@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Tài khoản — Chek_NVR{% endblock %}
+{% block content %}
+<h3 class="mb-4">Tài khoản của tôi</h3>
+
+<div class="row">
+  <div class="col-md-5">
+    <div class="card mb-3"><div class="card-body">
+      <h6 class="card-title">Thông tin</h6>
+      <table class="table table-sm mb-0">
+        <tr><th>Tài khoản</th><td>{{ user.username }}</td></tr>
+        <tr><th>Vai trò</th>
+          <td><span class="badge text-bg-{{ 'warning' if user.role == 'admin' else 'secondary' }}">{{ user.role }}</span></td>
+        </tr>
+      </table>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+      <h6 class="card-title">Đổi mật khẩu</h6>
+      {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
+      {% if ok %}<div class="alert alert-success py-2">{{ ok }}</div>{% endif %}
+      <form method="post" action="/account/passwd">
+        <div class="mb-3">
+          <label class="form-label">Mật khẩu hiện tại</label>
+          <input type="password" name="current_password" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Mật khẩu mới</label>
+          <input type="password" name="new_password" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Đổi mật khẩu</button>
+      </form>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

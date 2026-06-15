@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Người dùng — Chek_NVR{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">Quản lý người dùng</h3>
+  <a href="/users/new" class="btn btn-primary btn-sm">+ Thêm người dùng</a>
+</div>
+
+{% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
+
+<div class="card"><div class="card-body">
+  <table class="table table-sm table-hover align-middle mb-0">
+    <thead class="table-light"><tr>
+      <th>ID</th><th>Tài khoản</th><th>Vai trò</th><th style="width:42%">Hành động</th>
+    </tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ u.username }}</td>
+        <td><span class="badge text-bg-{{ 'warning' if u.role == 'admin' else 'secondary' }}">{{ u.role }}</span></td>
+        <td>
+          <div class="d-flex flex-wrap gap-1">
+            <!-- Đổi vai trò -->
+            <form method="post" action="/users/{{ u.id }}/role" class="d-inline-flex">
+              <select name="role" class="form-select form-select-sm" style="width:auto"
+                      onchange="this.form.submit()">
+                {% for r in roles %}
+                <option value="{{ r }}" {% if r == u.role %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+              </select>
+            </form>
+            <!-- Reset mật khẩu -->
+            <form method="post" action="/users/{{ u.id }}/passwd" class="d-inline-flex gap-1">
+              <input type="password" name="password" class="form-control form-control-sm"
+                     placeholder="Mật khẩu mới" style="width:140px" required>
+              <button type="submit" class="btn btn-outline-secondary btn-sm">Đặt lại</button>
+            </form>
+            <!-- Xóa -->
+            <form method="post" action="/users/{{ u.id }}/delete" class="d-inline"
+                  onsubmit="return confirm('Xóa người dùng {{ u.username }}?');">
+              <button type="submit" class="btn btn-outline-danger btn-sm">Xóa</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-center text-muted py-3">Chưa có người dùng.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endblock %}

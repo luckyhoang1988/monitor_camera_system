@@ -1,0 +1,31 @@
+# Phiên bản đã kiểm chứng chạy trên Python 3.14 (Windows).
+
+# Web framework
+fastapi==0.137.0
+uvicorn[standard]==0.49.0
+
+# HTTP client (async, Digest auth cho Hikvision ISAPI)
+httpx==0.28.1
+
+# Database (async)
+sqlalchemy[asyncio]==2.0.50
+asyncpg==0.31.0
+alembic==1.18.4
+
+# Config & validation
+pydantic==2.13.4
+pydantic-settings==2.14.1
+
+# Scheduler
+apscheduler==3.11.2
+
+# Templating + form parsing
+jinja2==3.1.6
+python-multipart==0.0.32
+
+# Mã hóa mật khẩu NVR
+cryptography==49.0.0
+
+# Test
+pytest==9.1.0
+pytest-asyncio==1.4.0

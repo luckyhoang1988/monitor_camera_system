@@ -1,0 +1,2 @@
+cd d:\15.Python\python-project\Chek_NVR
+python -m uvicorn app.main:app --reload --port 8080

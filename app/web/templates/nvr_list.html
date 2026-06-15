@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Danh sách NVR — Chek_NVR{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">Danh sách NVR</h3>
+  {% if request.state.role == 'admin' %}
+  <a href="/nvrs/new" class="btn btn-primary btn-sm">+ Thêm NVR</a>
+  {% endif %}
+</div>
+
+<form class="row g-2 mb-3" hx-get="/nvrs" hx-target="#nvr-table" hx-trigger="change, submit">
+  <div class="col-auto">
+    <select name="area" class="form-select form-select-sm">
+      <option value="">— Tất cả khu vực —</option>
+      {% for a in areas %}
+      <option value="{{ a }}" {% if a == sel_area %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="status" class="form-select form-select-sm">
+      <option value="">— Tất cả trạng thái —</option>
+      {% for s in ["Online", "Offline", "Warning", "Auth Error", "Network Error"] %}
+      <option value="{{ s }}" {% if s == sel_status %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+<div id="nvr-table">
+  {% include "partials/nvr_table.html" %}
+</div>
+{% endblock %}

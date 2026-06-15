@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Thêm người dùng — Chek_NVR{% endblock %}
+{% block content %}
+<a href="/users" class="btn btn-sm btn-outline-secondary mb-3">← Danh sách người dùng</a>
+<h3 class="mb-4">Thêm người dùng</h3>
+
+<div class="row"><div class="col-md-5">
+  {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
+  <form method="post" action="/users/new">
+    <div class="mb-3">
+      <label class="form-label">Tài khoản</label>
+      <input type="text" name="username" class="form-control" autofocus required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Mật khẩu</label>
+      <input type="password" name="password" class="form-control" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Vai trò</label>
+      <select name="role" class="form-select">
+        {% for r in roles %}
+        <option value="{{ r }}" {% if r == 'viewer' %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Tạo</button>
+    <a href="/users" class="btn btn-outline-secondary">Hủy</a>
+  </form>
+</div></div>
+{% endblock %}

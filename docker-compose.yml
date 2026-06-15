@@ -1,0 +1,40 @@
+# Chek_NVR — chạy app + PostgreSQL bằng Docker Compose.
+# Dùng: cp .env.docker.example .env  (điền giá trị)  ->  docker compose up -d --build
+# Tạo admin đầu: docker compose exec app python -m scripts.manage_user add \
+#                  --username admin --password "..." --role admin
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # $$ để biến được đánh giá TRONG container (không phải compose interpolation).
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # Không map port DB ra host (chỉ app trong mạng compose truy cập).
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # Mặc định CHỈ lắng nghe localhost của host cho an toàn (sau reverse proxy/TLS).
+      # Muốn mở ra LAN: đổi thành "8080:8080" (cân nhắc rủi ro lộ dashboard).
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  pgdata:

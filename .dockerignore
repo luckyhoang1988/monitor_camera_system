@@ -1,0 +1,29 @@
+# Loại khỏi build context (ảnh nhỏ hơn, không lọt secret).
+.git/
+.gitignore
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Secrets & cấu hình cục bộ — KHÔNG đưa vào image.
+.env
+*.key
+
+# Test / cache
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Ghi chú cá nhân / tài liệu không cần trong image
+cach_chay.txt
+*.log

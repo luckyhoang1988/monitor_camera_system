@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ "Sửa NVR" if nvr else "Thêm NVR" }} — Chek_NVR{% endblock %}
+{% block content %}
+<a href="/nvrs" class="btn btn-sm btn-outline-secondary mb-3">← Danh sách</a>
+<h3 class="mb-3">{{ "Sửa NVR: " + nvr.name if nvr else "Thêm NVR mới" }}</h3>
+
+<form method="post" action="{{ action }}" class="card p-4 bg-white" style="max-width: 720px;">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Tên NVR *</label>
+      <input name="name" class="form-control" required value="{{ nvr.name if nvr else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">IP / Domain *</label>
+      <input name="host" class="form-control" required value="{{ nvr.host if nvr else '' }}">
+    </div>
+
+    <div class="col-md-3">
+      <label class="form-label">Port</label>
+      <input name="port" type="number" class="form-control" value="{{ nvr.http_port if nvr else 80 }}">
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="use_https" id="use_https"
+               {% if nvr and nvr.use_https %}checked{% endif %}>
+        <label class="form-check-label" for="use_https">Dùng HTTPS</label>
+      </div>
+    </div>
+    <div class="col-md-6 d-flex align-items-end">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="enabled" id="enabled"
+               {% if (nvr and nvr.enabled) or not nvr %}checked{% endif %}>
+        <label class="form-check-label" for="enabled">Bật giám sát</label>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <label class="form-label">Username *</label>
+      <input name="username" class="form-control" required value="{{ nvr.username if nvr else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">
+        Password {{ "(để trống nếu không đổi)" if nvr else "*" }}
+      </label>
+      <input name="password" type="password" class="form-control" {% if not nvr %}required{% endif %}>
+    </div>
+
+    <div class="col-md-6">
+      <label class="form-label">Khu vực</label>
+      <input name="area" class="form-control" value="{{ nvr.area or '' if nvr else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Vị trí</label>
+      <input name="location" class="form-control" value="{{ nvr.location or '' if nvr else '' }}">
+    </div>
+
+    <div class="col-md-6">
+      <label class="form-label">Model</label>
+      <input name="model" class="form-control" value="{{ nvr.model or '' if nvr else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Số kênh</label>
+      <input name="channels" type="number" class="form-control" value="{{ nvr.channel_count or '' if nvr else '' }}">
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Ghi chú</label>
+      <textarea name="note" class="form-control" rows="2">{{ nvr.note or '' if nvr else '' }}</textarea>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">{{ "Lưu thay đổi" if nvr else "Thêm NVR" }}</button>
+    <a href="/nvrs" class="btn btn-outline-secondary">Hủy</a>
+  </div>
+</form>
+{% endblock %}

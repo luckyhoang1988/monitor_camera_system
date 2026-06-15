@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Cảnh báo — Chek_NVR{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">Cảnh báo</h3>
+  <div class="form-check form-switch">
+    <input class="form-check-input" type="checkbox" id="showAll"
+           hx-get="/alerts?show_all=true" hx-target="#alert-table" hx-trigger="change"
+           {% if show_all %}checked{% endif %}>
+    <label class="form-check-label" for="showAll">Hiện cả đã xử lý</label>
+  </div>
+</div>
+
+<!-- Tự động làm mới mỗi 15s qua HTMX polling -->
+<div id="alert-table" hx-get="/alerts{% if show_all %}?show_all=true{% endif %}"
+     hx-trigger="every 15s" hx-swap="innerHTML">
+  {% include "partials/alert_table.html" %}
+</div>
+{% endblock %}

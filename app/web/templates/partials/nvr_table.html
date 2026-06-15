@@ -1,0 +1,34 @@
+<table class="table table-hover table-sm bg-white">
+  <thead class="table-light">
+    <tr>
+      <th>Tên NVR</th><th>IP/Domain</th><th>Vị trí</th><th>Khu vực</th>
+      <th>Trạng thái</th><th>Camera (on/off)</th><th>Kiểm tra cuối</th><th>Lỗi</th><th>Thao tác</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td><a href="/nvrs/{{ r.nvr.id }}">{{ r.nvr.name }}</a></td>
+      <td>{{ r.nvr.host }}:{{ r.nvr.http_port }}</td>
+      <td>{{ r.nvr.location or "—" }}</td>
+      <td>{{ r.nvr.area or "—" }}</td>
+      <td><span class="badge text-bg-{{ r.nvr.current_status | badge }}">{{ r.nvr.current_status }}</span></td>
+      <td><span class="text-success">{{ r.cam_online }}</span> / <span class="text-danger">{{ r.cam_offline }}</span></td>
+      <td>{{ r.nvr.last_checked_at | localtime }}</td>
+      <td class="text-truncate" style="max-width: 220px;">{{ r.nvr.last_error or "" }}</td>
+      <td style="white-space: nowrap;">
+        <form method="post" action="/nvrs/{{ r.nvr.id }}/check" class="d-inline">
+          <button type="submit" class="btn btn-success btn-sm py-0">Kiểm tra</button>
+        </form>
+        <a href="/nvrs/{{ r.nvr.id }}/edit" class="btn btn-outline-secondary btn-sm py-0">Sửa</a>
+        <form method="post" action="/nvrs/{{ r.nvr.id }}/delete" class="d-inline"
+              onsubmit="return confirm('Xóa NVR {{ r.nvr.name }}?');">
+          <button type="submit" class="btn btn-outline-danger btn-sm py-0">Xóa</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="text-center text-muted py-4">Chưa có NVR nào.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

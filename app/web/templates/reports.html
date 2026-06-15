@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Báo cáo uptime — Chek_NVR{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0">Báo cáo uptime</h3>
+  <div class="btn-group" role="group" aria-label="Khoảng thời gian">
+    {% for d, label in [(1, "24 giờ"), (7, "7 ngày"), (30, "30 ngày"), (90, "90 ngày")] %}
+    <a href="/reports?days={{ d }}"
+       class="btn btn-sm {{ 'btn-primary' if days == d else 'btn-outline-primary' }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-primary"><div class="card-body">
+      <h6 class="card-title text-primary">Uptime NVR (toàn hệ thống)</h6>
+      <p class="display-6 mb-0">{{ report.system_nvr_uptime }}%</p>
+      <small class="text-muted">% lần kiểm tra NVR ở trạng thái Online trong {{ days }} ngày</small>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-info"><div class="card-body">
+      <h6 class="card-title text-info">Uptime Camera (toàn hệ thống)</h6>
+      <p class="display-6 mb-0">{{ report.system_camera_uptime }}%</p>
+      <small class="text-muted">% lần kiểm tra camera ở trạng thái Online trong {{ days }} ngày</small>
+    </div></div>
+  </div>
+</div>
+
+<div class="card mb-4"><div class="card-body">
+  <h6 class="card-title">Uptime theo từng NVR (tệ nhất trước)</h6>
+  <table class="table table-sm table-hover mb-0">
+    <thead class="table-light"><tr>
+      <th>NVR</th><th>Khu vực</th><th>Số lần kiểm tra</th><th>Online</th>
+      <th style="width:28%">Uptime</th>
+    </tr></thead>
+    <tbody>
+      {% for r in report.nvr_rows %}
+      <tr>
+        <td><a href="/nvrs/{{ r.nvr_id }}">{{ r.name }}</a></td>
+        <td>{{ r.area or "—" }}</td>
+        <td>{{ r.total_checks }}</td>
+        <td>{{ r.online_checks }}</td>
+        <td>
+          {% set color = "success" if r.uptime_pct >= 99 else ("warning" if r.uptime_pct >= 90 else "danger") %}
+          <div class="d-flex align-items-center">
+            <div class="progress flex-grow-1 me-2" style="height:14px;">
+              <div class="progress-bar bg-{{ color }}" role="progressbar"
+                   style="width: {{ r.uptime_pct }}%"></div>
+            </div>
+            <span class="badge text-bg-{{ color }}">{{ r.uptime_pct }}%</span>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-center text-muted py-3">Chưa có dữ liệu log trong khoảng này.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+
+<div class="card"><div class="card-body">
+  <h6 class="card-title">Camera mất tín hiệu nhiều nhất</h6>
+  <table class="table table-sm table-hover mb-0">
+    <thead class="table-light"><tr>
+      <th>NVR</th><th>Kênh</th><th>Tên</th><th>Số lần Offline</th><th>Tổng kiểm tra</th><th>Uptime</th>
+    </tr></thead>
+    <tbody>
+      {% for c in report.worst_cameras %}
+      <tr>
+        <td>{{ c.nvr_name }}</td>
+        <td>{{ c.channel_no }}</td>
+        <td>{{ c.name or "—" }}</td>
+        <td><span class="badge text-bg-danger">{{ c.offline_checks }}</span></td>
+        <td>{{ c.total_checks }}</td>
+        <td>{{ c.uptime_pct }}%</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-center text-muted py-3">Không có camera nào offline trong khoảng này. 🎉</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endblock %}

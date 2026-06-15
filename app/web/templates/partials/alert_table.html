@@ -1,0 +1,27 @@
+<table class="table table-sm bg-white">
+  <thead class="table-light">
+    <tr><th>Thời điểm</th><th>Mức độ</th><th>Loại</th><th>NVR</th><th>Nội dung</th><th>Trạng thái</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.alert.created_at | localtime }}</td>
+      <td><span class="badge text-bg-{{ r.alert.severity | severity_badge }}">{{ r.alert.severity }}</span></td>
+      <td>{{ r.alert.type }}</td>
+      <td>
+        {% if r.alert.nvr_id %}<a href="/nvrs/{{ r.alert.nvr_id }}">{{ r.nvr_name or r.alert.nvr_id }}</a>{% else %}—{% endif %}
+      </td>
+      <td>{{ r.alert.message }}</td>
+      <td>
+        {% if r.alert.status == "open" %}
+          <span class="badge text-bg-danger">open</span>
+        {% else %}
+          <span class="badge text-bg-success">resolved</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-center text-muted py-4">Không có cảnh báo.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

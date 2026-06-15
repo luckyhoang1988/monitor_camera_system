@@ -1,0 +1,14 @@
+# Chuẩn hóa kết thúc dòng: LƯU trong repo là LF cho mọi file text.
+# Quan trọng để script .sh chạy được trên Linux/Docker (CRLF làm hỏng shebang).
+* text=auto eol=lf
+
+# Một số đuôi luôn là LF (kể cả khi dev trên Windows)
+*.sh   text eol=lf
+*.py   text eol=lf
+*.html text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.ini  text eol=lf
+*.md   text eol=lf
+Dockerfile text eol=lf
