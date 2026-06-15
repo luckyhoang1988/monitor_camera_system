@@ -31,3 +31,6 @@ Thumbs.db
 # Logs / DB local
 *.log
 *.sqlite3
+
+# Ghi chú cá nhân
+cach_chay.txt
