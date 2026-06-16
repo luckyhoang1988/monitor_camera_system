@@ -8,11 +8,24 @@ Lưu ý (xem CLAUDE.md §4):
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import random
 import re
+import ssl
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 
 import httpx
+
+# Lỗi mạng tạm thời -> đáng retry (không gồm 401/4xx/parse).
+_RETRYABLE_EXC = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.PoolTimeout,
+)
 
 
 class ISAPIError(Exception):
@@ -21,6 +34,41 @@ class ISAPIError(Exception):
 
 class ISAPIAuthError(ISAPIError):
     """Sai tài khoản/mật khẩu (HTTP 401)."""
+
+
+def build_timeout(
+    connect: float, read: float, write: float
+) -> httpx.Timeout:
+    """Tạo httpx.Timeout chi tiết (pool dùng chung connect)."""
+    return httpx.Timeout(connect=connect, read=read, write=write, pool=connect)
+
+
+def normalize_fingerprint(fp: str) -> str:
+    """Chuẩn hóa fingerprint để so sánh: bỏ ':'/khoảng trắng, thường hóa."""
+    return re.sub(r"[\s:]", "", fp).lower()
+
+
+async def get_cert_fingerprint(host: str, port: int, timeout: float = 5.0) -> str:
+    """Mở TLS tới host:port, trả SHA-256 fingerprint (hex) của cert máy chủ.
+
+    Không xác thực CA (NVR thường dùng cert tự ký) — chỉ lấy cert để pin.
+    """
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    reader, writer = await asyncio.wait_for(
+        asyncio.open_connection(host, port, ssl=ctx), timeout=timeout
+    )
+    try:
+        ssl_obj = writer.get_extra_info("ssl_object")
+        der = ssl_obj.getpeercert(binary_form=True)
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:  # noqa: BLE001 - đóng socket lỗi không quan trọng
+            pass
+    return hashlib.sha256(der).hexdigest()
 
 
 def local_name(tag: str) -> str:
@@ -73,15 +121,34 @@ class ISAPIClient:
         port: int = 80,
         use_https: bool = False,
         timeout: int = 10,
+        *,
+        retries: int = 0,
+        retry_backoff_base: float = 0.5,
     ) -> None:
         scheme = "https" if use_https else "http"
         self.base_url = f"{scheme}://{host}:{port}"
         self.timeout = timeout
+        self.retries = retries
+        self.retry_backoff_base = retry_backoff_base
         self._auth = httpx.DigestAuth(username, password)
 
     async def _get_xml(self, client: httpx.AsyncClient, path: str) -> ET.Element:
-        """GET một endpoint ISAPI và parse XML thành Element gốc."""
-        resp = await client.get(path, auth=self._auth)
+        """GET một endpoint ISAPI và parse XML thành Element gốc.
+
+        Retry với exponential backoff + jitter cho lỗi mạng tạm thời
+        (connect/read timeout). KHÔNG retry 401 (Auth Error) để giữ phân loại đúng.
+        """
+        for attempt in range(self.retries + 1):
+            try:
+                resp = await client.get(path, auth=self._auth)
+                break
+            except _RETRYABLE_EXC:
+                if attempt >= self.retries:
+                    raise
+                delay = self.retry_backoff_base * (2**attempt) + random.uniform(
+                    0, self.retry_backoff_base
+                )
+                await asyncio.sleep(delay)
         if resp.status_code == 401:
             raise ISAPIAuthError(f"401 Unauthorized tại {path}")
         resp.raise_for_status()
@@ -155,13 +222,15 @@ async def probe_nvr(
     port: int = 80,
     use_https: bool = False,
     timeout: int = 10,
+    *,
+    verify: bool | str = False,
 ) -> ISAPIResult:
     """Tiện ích: mở 1 client, lấy device info + channels cho một NVR."""
     import time
 
     client_obj = ISAPIClient(host, username, password, port, use_https, timeout)
     async with httpx.AsyncClient(
-        base_url=client_obj.base_url, timeout=timeout, verify=False
+        base_url=client_obj.base_url, timeout=timeout, verify=verify
     ) as client:
         start = time.perf_counter()
         device = await client_obj.get_device_info(client)

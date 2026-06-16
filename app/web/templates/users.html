@@ -23,6 +23,7 @@
           <div class="d-flex flex-wrap gap-1">
             <!-- Đổi vai trò -->
             <form method="post" action="/users/{{ u.id }}/role" class="d-inline-flex">
+              {% include "partials/_csrf.html" %}
               <select name="role" class="form-select form-select-sm" style="width:auto"
                       onchange="this.form.submit()">
                 {% for r in roles %}
@@ -32,6 +33,7 @@
             </form>
             <!-- Reset mật khẩu -->
             <form method="post" action="/users/{{ u.id }}/passwd" class="d-inline-flex gap-1">
+              {% include "partials/_csrf.html" %}
               <input type="password" name="password" class="form-control form-control-sm"
                      placeholder="Mật khẩu mới" style="width:140px" required>
               <button type="submit" class="btn btn-outline-secondary btn-sm">Đặt lại</button>
@@ -39,6 +41,7 @@
             <!-- Xóa -->
             <form method="post" action="/users/{{ u.id }}/delete" class="d-inline"
                   onsubmit="return confirm('Xóa người dùng {{ u.username }}?');">
+              {% include "partials/_csrf.html" %}
               <button type="submit" class="btn btn-outline-danger btn-sm">Xóa</button>
             </form>
           </div>

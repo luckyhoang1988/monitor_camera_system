@@ -5,6 +5,7 @@
 <h3 class="mb-3">{{ "Sửa NVR: " + nvr.name if nvr else "Thêm NVR mới" }}</h3>
 
 <form method="post" action="{{ action }}" class="card p-4 bg-white" style="max-width: 720px;">
+  {% include "partials/_csrf.html" %}
   <div class="row g-3">
     <div class="col-md-6">
       <label class="form-label">Tên NVR *</label>
@@ -52,6 +53,16 @@
     <div class="col-md-6">
       <label class="form-label">Vị trí</label>
       <input name="location" class="form-control" value="{{ nvr.location or '' if nvr else '' }}">
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">TLS Fingerprint (SHA-256)</label>
+      <input name="tls_fingerprint" class="form-control" placeholder="vd: AB:CD:... (để trống nếu không pin)"
+             value="{{ nvr.tls_fingerprint or '' if nvr else '' }}">
+      <div class="form-text">
+        Chỉ dùng khi bật HTTPS với cert tự ký. Pin để chặn MITM.
+        Lấy: <code>openssl s_client -connect HOST:443 &lt;/dev/null 2&gt;/dev/null | openssl x509 -noout -fingerprint -sha256</code>
+      </div>
     </div>
 
     <div class="col-md-6">

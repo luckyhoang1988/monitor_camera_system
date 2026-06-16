@@ -27,6 +27,7 @@
           <span class="badge text-bg-{{ 'warning' if request.state.role == 'admin' else 'secondary' }}">{{ request.state.role }}</span>
         </a>
         <form method="post" action="/logout" class="d-inline ms-2">
+          {% include "partials/_csrf.html" %}
           <button type="submit" class="btn btn-sm btn-outline-light">Đăng xuất</button>
         </form>
       </div>

@@ -7,6 +7,7 @@
 <div class="row"><div class="col-md-5">
   {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
   <form method="post" action="/users/new">
+    {% include "partials/_csrf.html" %}
     <div class="mb-3">
       <label class="form-label">Tài khoản</label>
       <input type="text" name="username" class="form-control" autofocus required>

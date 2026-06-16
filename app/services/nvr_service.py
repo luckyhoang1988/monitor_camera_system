@@ -7,9 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.models import NVRDevice
+from app.enums import NVRStatus
 from app.security import encrypt_password
-from app.services.alert_service import process_outcome
-from app.services.status_service import check_and_update_nvr
+from app.services.alert_service import process_camera_alerts, process_nvr_alerts
+from app.services.status_service import (
+    check_and_update_nvr_health,
+    update_nvr_cameras,
+)
 
 
 async def create_nvr(session: AsyncSession, data: dict) -> NVRDevice:
@@ -21,6 +25,7 @@ async def create_nvr(session: AsyncSession, data: dict) -> NVRDevice:
         use_https=data.get("use_https", False),
         username=data["username"],
         password_enc=encrypt_password(data["password"]),
+        tls_fingerprint=(data.get("tls_fingerprint") or "").strip() or None,
         location=data.get("location") or None,
         area=data.get("area") or None,
         model=data.get("model") or None,
@@ -43,6 +48,7 @@ async def update_nvr(session: AsyncSession, nvr_id: int, data: dict) -> NVRDevic
     nvr.http_port = data.get("http_port", 80)
     nvr.use_https = data.get("use_https", False)
     nvr.username = data["username"]
+    nvr.tls_fingerprint = (data.get("tls_fingerprint") or "").strip() or None
     nvr.location = data.get("location") or None
     nvr.area = data.get("area") or None
     nvr.model = data.get("model") or None
@@ -62,15 +68,24 @@ async def delete_nvr(session: AsyncSession, nvr_id: int) -> bool:
 
 
 async def check_nvr_now(session: AsyncSession, nvr_id: int) -> bool:
-    """Kiểm tra ngay 1 NVR (ghi DB + log + alert). Trả False nếu không tồn tại."""
+    """Kiểm tra ngay 1 NVR đầy đủ (health + camera nếu Online). False nếu không có."""
     settings = get_settings()
     nvr = await session.get(NVRDevice, nvr_id)
     if nvr is None:
         return False
     nvr_name = nvr.name
-    outcome = await check_and_update_nvr(
-        session, nvr, fail_threshold=settings.fail_threshold, timeout=settings.request_timeout
+    outcome = await check_and_update_nvr_health(
+        session,
+        nvr,
+        fail_threshold=settings.fail_threshold,
+        timeout=settings.request_timeout,
     )
-    await process_outcome(session, outcome, nvr_name)
+    await process_nvr_alerts(session, outcome, nvr_name)
+    # Khi NVR Online thì quét luôn camera để nút "Kiểm tra ngay" phản ánh đầy đủ.
+    if outcome.new_status == NVRStatus.ONLINE:
+        offline = await update_nvr_cameras(
+            session, nvr, timeout=settings.request_timeout
+        )
+        await process_camera_alerts(session, nvr_id, nvr_name, offline)
     await session.commit()
     return True

@@ -20,6 +20,7 @@
       {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
       {% if ok %}<div class="alert alert-success py-2">{{ ok }}</div>{% endif %}
       <form method="post" action="/account/passwd">
+        {% include "partials/_csrf.html" %}
         <div class="mb-3">
           <label class="form-label">Mật khẩu hiện tại</label>
           <input type="password" name="current_password" class="form-control" required>

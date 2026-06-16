@@ -100,6 +100,9 @@ async def cmd_test(args: argparse.Namespace) -> None:
         port=nvr.http_port,
         use_https=nvr.use_https,
         timeout=settings.request_timeout,
+        tls_fingerprint=nvr.tls_fingerprint,
+        retries=settings.request_retries,
+        retry_backoff_base=settings.retry_backoff_base,
     )
     print(f"  Trạng thái thô : {result.raw_status.value}")
     print(f"  Ping / Port    : {result.ping_ok} / {result.port_ok}")
@@ -117,10 +120,11 @@ async def cmd_test(args: argparse.Namespace) -> None:
 
 
 async def cmd_scan(_: argparse.Namespace) -> None:
-    """Chạy một lượt quét toàn bộ NVR ngay lập tức (ghi DB + log + alert)."""
-    from app.collector.scheduler import scan_all_nvrs
+    """Chạy một lượt quét toàn bộ NVR ngay lập tức (health + camera)."""
+    from app.collector.scheduler import scan_cameras, scan_nvr_health
 
-    await scan_all_nvrs()
+    await scan_nvr_health()
+    await scan_cameras()
     print("Đã quét xong.")
 
 
@@ -177,9 +181,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+async def _run(args: argparse.Namespace) -> None:
+    """Chạy lệnh rồi đóng pool HTTP dùng chung (CLI không có lifespan)."""
+    from app.collector.http_pool import close_all
+
+    try:
+        await args.func(args)
+    finally:
+        await close_all()
+
+
 def main() -> None:
     args = build_parser().parse_args()
-    asyncio.run(args.func(args))
+    asyncio.run(_run(args))
 
 
 if __name__ == "__main__":

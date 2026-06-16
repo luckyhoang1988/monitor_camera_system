@@ -10,11 +10,13 @@
   {% if request.state.role == 'admin' %}
   <div>
     <form method="post" action="/nvrs/{{ nvr.id }}/check" class="d-inline">
+      {% include "partials/_csrf.html" %}
       <button type="submit" class="btn btn-success btn-sm">🔄 Kiểm tra ngay</button>
     </form>
     <a href="/nvrs/{{ nvr.id }}/edit" class="btn btn-outline-secondary btn-sm">Sửa</a>
     <form method="post" action="/nvrs/{{ nvr.id }}/delete" class="d-inline"
           onsubmit="return confirm('Xóa NVR {{ nvr.name }}?');">
+      {% include "partials/_csrf.html" %}
       <button type="submit" class="btn btn-outline-danger btn-sm">Xóa</button>
     </form>
   </div>

@@ -60,6 +60,20 @@ python -m scripts.manage_nvr purge --days 90      # dọn log cũ thủ công (r
 Báo cáo uptime: **/reports** (chọn 24 giờ / 7 / 30 / 90 ngày). Log cũ được dọn tự
 động mỗi ngày lúc 03:00 theo `LOG_RETENTION_DAYS`.
 
+## Bảo mật kết nối NVR (TLS)
+
+NVR Hikvision thường dùng chứng chỉ tự ký nên mặc định `NVR_TLS_VERIFY=false`.
+Để **chặn MITM mà không cần phân phối CA**, hãy *pin* SHA-256 fingerprint của từng
+NVR (trường **TLS Fingerprint** trong form NVR, hoặc cột `tls_fingerprint`):
+
+```bash
+openssl s_client -connect HOST:443 </dev/null 2>/dev/null \
+    | openssl x509 -noout -fingerprint -sha256
+```
+
+Khi đã pin, fingerprint sai sẽ bị đánh **Warning** kèm cảnh báo nghi ngờ MITM thay
+vì cho phép kết nối. Nếu có CA nội bộ, đặt `NVR_CA_CERT_PATH` (ưu tiên hơn cờ verify).
+
 ## Triển khai lên server
 
 Dùng Docker Compose (app + PostgreSQL). Xem chi tiết ở [DEPLOY.md](DEPLOY.md):

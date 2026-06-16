@@ -27,6 +27,10 @@ from app.enums import (
 
 class NVRDevice(Base):
     __tablename__ = "nvr_devices"
+    __table_args__ = (
+        Index("ix_nvr_status", "current_status"),
+        Index("ix_nvr_area_status", "area", "current_status"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
@@ -35,6 +39,8 @@ class NVRDevice(Base):
     use_https: Mapped[bool] = mapped_column(Boolean, default=False)
     username: Mapped[str] = mapped_column(String(120))
     password_enc: Mapped[str] = mapped_column(Text)  # mã hóa Fernet, KHÔNG plaintext
+    # SHA-256 fingerprint cert TLS để pin (chống MITM với cert tự ký). NULL = không pin.
+    tls_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     area: Mapped[str | None] = mapped_column(String(120), nullable=True)
     model: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -65,7 +71,10 @@ class NVRDevice(Base):
 
 class CameraChannel(Base):
     __tablename__ = "camera_channels"
-    __table_args__ = (Index("ix_camera_nvr_channel", "nvr_id", "channel_no", unique=True),)
+    __table_args__ = (
+        Index("ix_camera_nvr_channel", "nvr_id", "channel_no", unique=True),
+        Index("ix_cam_status", "current_status"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nvr_id: Mapped[int] = mapped_column(
@@ -84,6 +93,10 @@ class CameraChannel(Base):
         DateTime(timezone=True), nullable=True
     )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Mốc bắt đầu offline liên tục (để tính ngưỡng phút sinh alert). NULL = đang online.
+    offline_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     nvr: Mapped["NVRDevice"] = relationship(back_populates="cameras")
 

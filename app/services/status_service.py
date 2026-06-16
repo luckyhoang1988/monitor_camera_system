@@ -6,13 +6,14 @@ Tách riêng phần I/O DB khỏi logic kiểm tra (checker/camera_checker) đ�
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collector.camera_checker import evaluate_cameras
-from app.collector.checker import apply_state_machine, check_nvr
+from app.collector.checker import apply_state_machine, check_nvr, fetch_nvr_channels
+from app.config import get_settings
 from app.db.models import CameraChannel, CameraStatusLog, NVRDevice, NVRStatusLog
 from app.enums import CameraStatus, NVRStatus
 from app.security import decrypt_password
@@ -23,26 +24,29 @@ def _now() -> datetime:
 
 
 @dataclass
-class NVRUpdateOutcome:
-    """Kết quả sau khi cập nhật 1 NVR — phục vụ sinh alert (bước 8)."""
+class NVRHealthOutcome:
+    """Kết quả kiểm tra sức khỏe 1 NVR (job health) — phục vụ sinh alert NVR."""
 
     nvr_id: int
     prev_status: NVRStatus
     new_status: NVRStatus
     response_time_ms: int | None
-    camera_offline_count: int = 0
 
 
-async def check_and_update_nvr(
+async def check_and_update_nvr_health(
     session: AsyncSession,
     nvr: NVRDevice,
     *,
     fail_threshold: int,
     timeout: int,
-) -> NVRUpdateOutcome:
-    """Kiểm tra 1 NVR, áp state machine, cập nhật DB + ghi log NVR & camera."""
+) -> NVRHealthOutcome:
+    """Kiểm tra sức khỏe NVR (ping/port/deviceInfo), áp state machine, ghi log NVR.
+
+    KHÔNG đụng camera — camera được quét ở job riêng (`update_nvr_cameras`).
+    """
     prev_status = NVRStatus(nvr.current_status)
     password = decrypt_password(nvr.password_enc)
+    settings = get_settings()
 
     result = await check_nvr(
         host=nvr.host,
@@ -51,13 +55,16 @@ async def check_and_update_nvr(
         port=nvr.http_port,
         use_https=nvr.use_https,
         timeout=timeout,
+        tls_fingerprint=nvr.tls_fingerprint,
+        retries=settings.request_retries,
+        retry_backoff_base=settings.retry_backoff_base,
+        fetch_channels=False,
     )
 
     new_status, new_fail_count = apply_state_machine(
         result.raw_status, nvr.fail_count, fail_threshold
     )
 
-    # Cập nhật bản ghi NVR.
     nvr.current_status = new_status.value
     nvr.fail_count = new_fail_count
     nvr.last_checked_at = _now()
@@ -76,18 +83,41 @@ async def check_and_update_nvr(
         )
     )
 
-    # Chỉ cập nhật camera khi NVR Online (mới có dữ liệu kênh đáng tin).
-    camera_offline = 0
-    if new_status == NVRStatus.ONLINE and result.channels:
-        camera_offline = await _update_cameras(session, nvr.id, result.channels)
-
-    return NVRUpdateOutcome(
+    return NVRHealthOutcome(
         nvr_id=nvr.id,
         prev_status=prev_status,
         new_status=new_status,
         response_time_ms=result.response_time_ms,
-        camera_offline_count=camera_offline,
     )
+
+
+async def update_nvr_cameras(
+    session: AsyncSession,
+    nvr: NVRDevice,
+    *,
+    timeout: int,
+) -> int:
+    """Quét + cập nhật camera của 1 NVR (job camera; gọi cho NVR đang Online).
+
+    Trả về số camera offline đủ lâu để alert. Lỗi fetch chỉ ghi log, KHÔNG đổi
+    trạng thái NVR (việc đó thuộc job health).
+    """
+    settings = get_settings()
+    password = decrypt_password(nvr.password_enc)
+    channels, error = await fetch_nvr_channels(
+        host=nvr.host,
+        username=nvr.username,
+        password=password,
+        port=nvr.http_port,
+        use_https=nvr.use_https,
+        timeout=timeout,
+        tls_fingerprint=nvr.tls_fingerprint,
+        retries=settings.request_retries,
+        retry_backoff_base=settings.retry_backoff_base,
+    )
+    if error or not channels:
+        return 0
+    return await _update_cameras(session, nvr.id, channels)
 
 
 async def _update_cameras(
@@ -95,7 +125,9 @@ async def _update_cameras(
 ) -> int:
     """Upsert camera_channels theo (nvr_id, channel_no), ghi camera_status_logs.
 
-    Trả về số camera đang offline.
+    Theo dõi `offline_since` cho từng camera (set khi chuyển offline, clear khi
+    online lại). Trả về **số camera offline liên tục >= `camera_offline_alert_min`
+    phút** — đây là tập đủ điều kiện để sinh alert (xem alert_service §5).
     """
     existing = {
         c.channel_no: c
@@ -106,7 +138,9 @@ async def _update_cameras(
         ).all()
     }
 
-    offline_count = 0
+    now = _now()
+    threshold = timedelta(minutes=get_settings().camera_offline_alert_min)
+    alertable_offline = 0
     evaluated = evaluate_cameras(channels)
 
     # Bước 1: upsert hàng camera (tạo mới nếu chưa có).
@@ -119,11 +153,16 @@ async def _update_cameras(
         row.name = cam.name or row.name
         row.camera_ip = cam.ip or row.camera_ip
         row.current_status = cam.status.value
-        row.last_checked_at = _now()
+        row.last_checked_at = now
         row.last_error = cam.error
-        rows.append((row, cam))
         if cam.status == CameraStatus.OFFLINE:
-            offline_count += 1
+            if row.offline_since is None:
+                row.offline_since = now
+            if now - row.offline_since >= threshold:
+                alertable_offline += 1
+        else:
+            row.offline_since = None
+        rows.append((row, cam))
 
     # Bước 2: flush để hàng mới có id, rồi ghi log theo camera_id.
     await session.flush()
@@ -136,4 +175,4 @@ async def _update_cameras(
             )
         )
 
-    return offline_count
+    return alertable_offline

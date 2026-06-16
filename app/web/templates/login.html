@@ -15,6 +15,7 @@
         <div class="alert alert-danger py-2">{{ error }}</div>
         {% endif %}
         <form method="post" action="/login">
+          {% include "partials/_csrf.html" %}
           <input type="hidden" name="next" value="{{ next }}">
           <div class="mb-3">
             <label class="form-label">Tài khoản</label>

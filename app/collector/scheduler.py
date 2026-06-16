@@ -1,7 +1,8 @@
 """APScheduler: quét NVR/camera định kỳ với giới hạn song song (Semaphore batch).
 
-Hiện gộp kiểm tra NVR + camera trong cùng một job `scan_all_nvrs` (camera được cập
-nhật khi NVR Online). Có thể tách tần suất riêng ở giai đoạn sau nếu cần.
+Hai job tách biệt theo đúng ngữ nghĩa config:
+- `scan_nvr_health`  : tần suất cao (`nvr_check_interval`)   — chỉ ping/port/deviceInfo.
+- `scan_cameras`     : tần suất thấp (`camera_check_interval`) — chỉ NVR đang Online.
 """
 
 from __future__ import annotations
@@ -15,17 +16,21 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db.base import AsyncSessionLocal
 from app.db.models import NVRDevice
-from app.services.alert_service import process_outcome
+from app.enums import NVRStatus
+from app.services.alert_service import process_camera_alerts, process_nvr_alerts
 from app.services.retention_service import purge_old_logs
-from app.services.status_service import check_and_update_nvr
+from app.services.status_service import (
+    check_and_update_nvr_health,
+    update_nvr_cameras,
+)
 
 logger = logging.getLogger("chek_nvr.scheduler")
 
 _scheduler: AsyncIOScheduler | None = None
 
 
-async def _check_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
-    """Kiểm tra 1 NVR trong session riêng (mỗi NVR 1 transaction độc lập)."""
+async def _health_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
+    """Kiểm tra sức khỏe 1 NVR trong session riêng (1 transaction độc lập)."""
     settings = get_settings()
     async with sem:
         async with AsyncSessionLocal() as session:
@@ -34,24 +39,47 @@ async def _check_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                 return
             try:
                 nvr_name = nvr.name
-                outcome = await check_and_update_nvr(
+                outcome = await check_and_update_nvr_health(
                     session,
                     nvr,
                     fail_threshold=settings.fail_threshold,
                     timeout=settings.request_timeout,
                 )
-                await process_outcome(session, outcome, nvr_name)
+                await process_nvr_alerts(session, outcome, nvr_name)
                 await session.commit()
                 logger.info(
-                    "NVR %s: %s -> %s", nvr_id, outcome.prev_status.value, outcome.new_status.value
+                    "NVR %s: %s -> %s",
+                    nvr_id,
+                    outcome.prev_status.value,
+                    outcome.new_status.value,
                 )
             except Exception:  # noqa: BLE001 - 1 NVR lỗi không được dừng cả batch
                 await session.rollback()
-                logger.exception("Lỗi khi kiểm tra NVR %s", nvr_id)
+                logger.exception("Lỗi khi kiểm tra sức khỏe NVR %s", nvr_id)
 
 
-async def scan_all_nvrs() -> None:
-    """Quét toàn bộ NVR đang bật, giới hạn song song bằng Semaphore."""
+async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
+    """Quét camera của 1 NVR (giả định NVR đang Online)."""
+    settings = get_settings()
+    async with sem:
+        async with AsyncSessionLocal() as session:
+            nvr = await session.get(NVRDevice, nvr_id)
+            if nvr is None or not nvr.enabled:
+                return
+            try:
+                nvr_name = nvr.name
+                offline = await update_nvr_cameras(
+                    session, nvr, timeout=settings.request_timeout
+                )
+                await process_camera_alerts(session, nvr_id, nvr_name, offline)
+                await session.commit()
+            except Exception:  # noqa: BLE001 - 1 NVR lỗi không được dừng cả batch
+                await session.rollback()
+                logger.exception("Lỗi khi quét camera NVR %s", nvr_id)
+
+
+async def scan_nvr_health() -> None:
+    """Quét sức khỏe toàn bộ NVR đang bật, giới hạn song song bằng Semaphore."""
     settings = get_settings()
     sem = asyncio.Semaphore(settings.max_concurrency)
 
@@ -66,8 +94,33 @@ async def scan_all_nvrs() -> None:
         logger.info("Không có NVR nào để quét.")
         return
 
-    logger.info("Bắt đầu quét %d NVR (song song tối đa %d)", len(ids), settings.max_concurrency)
-    await asyncio.gather(*(_check_one(i, sem) for i in ids))
+    logger.info(
+        "Quét sức khỏe %d NVR (song song tối đa %d)", len(ids), settings.max_concurrency
+    )
+    await asyncio.gather(*(_health_one(i, sem) for i in ids))
+
+
+async def scan_cameras() -> None:
+    """Quét camera cho các NVR đang Online (tần suất thấp hơn job health)."""
+    settings = get_settings()
+    sem = asyncio.Semaphore(settings.max_concurrency)
+
+    async with AsyncSessionLocal() as session:
+        ids = (
+            await session.scalars(
+                select(NVRDevice.id).where(
+                    NVRDevice.enabled.is_(True),
+                    NVRDevice.current_status == NVRStatus.ONLINE.value,
+                )
+            )
+        ).all()
+
+    if not ids:
+        logger.info("Không có NVR Online nào để quét camera.")
+        return
+
+    logger.info("Quét camera của %d NVR Online", len(ids))
+    await asyncio.gather(*(_cameras_one(i, sem) for i in ids))
 
 
 async def purge_logs_job() -> None:
@@ -101,10 +154,18 @@ def start_scheduler() -> AsyncIOScheduler:
     settings = get_settings()
     scheduler = AsyncIOScheduler(timezone=settings.timezone)
     scheduler.add_job(
-        scan_all_nvrs,
+        scan_nvr_health,
         "interval",
         seconds=settings.nvr_check_interval,
-        id="scan_all_nvrs",
+        id="scan_nvr_health",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        scan_cameras,
+        "interval",
+        seconds=settings.camera_check_interval,
+        id="scan_cameras",
         max_instances=1,
         coalesce=True,
     )
@@ -121,8 +182,9 @@ def start_scheduler() -> AsyncIOScheduler:
     scheduler.start()
     _scheduler = scheduler
     logger.info(
-        "Scheduler đã chạy: quét NVR mỗi %ds, dọn log 03:00 (giữ %d ngày)",
+        "Scheduler đã chạy: health mỗi %ds, camera mỗi %ds, dọn log 03:00 (giữ %d ngày)",
         settings.nvr_check_interval,
+        settings.camera_check_interval,
         settings.log_retention_days,
     )
     return scheduler

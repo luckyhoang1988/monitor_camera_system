@@ -6,13 +6,15 @@ Router (api/web) sẽ được cắm vào ở bước 7-8 (xem lộ trình CLAUD
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.auth import SESSION_COOKIE, SessionUser, verify_session_token
+from app.collector.http_pool import close_all as close_http_pool
 from app.collector.scheduler import shutdown_scheduler, start_scheduler
 from app.config import get_settings
+from app.csrf import CSRF_COOKIE, issue_token, verify_csrf
 from app.enums import UserRole
 from app.web.user_views import router as user_router
 from app.web.views import router as web_router
@@ -30,6 +32,7 @@ async def lifespan(app: FastAPI):
     start_scheduler()
     yield
     shutdown_scheduler()
+    await close_http_pool()
 
 
 app = FastAPI(title="Chek_NVR", version="0.1.0", lifespan=lifespan)
@@ -52,19 +55,39 @@ async def auth_middleware(request: Request, call_next):
     request.state.username = user.username if user else None
     request.state.role = user.role if user else None
 
+    # CSRF: dùng token cookie sẵn có, hoặc phát mới (set ở response phía dưới).
+    csrf_token = request.cookies.get(CSRF_COOKIE)
+    is_new_csrf = csrf_token is None
+    if is_new_csrf:
+        csrf_token = issue_token()
+    request.state.csrf_token = csrf_token
+
+    def _with_csrf(resp):
+        if is_new_csrf:
+            resp.set_cookie(
+                CSRF_COOKIE,
+                csrf_token,
+                samesite="lax",
+                secure=get_settings().cookie_secure,
+                max_age=get_settings().session_ttl_hours * 3600,
+            )
+        return resp
+
     if not get_settings().auth_enabled or request.url.path in _PUBLIC_PATHS:
-        return await call_next(request)
+        return _with_csrf(await call_next(request))
 
     if user is None:
         # HTMX request -> báo client tự redirect; còn lại redirect thường.
         if request.headers.get("HX-Request"):
             resp = RedirectResponse("/login", status_code=401)
             resp.headers["HX-Redirect"] = "/login"
-            return resp
+            return _with_csrf(resp)
         next_url = request.url.path
-        return RedirectResponse(f"/login?next={next_url}", status_code=303)
+        return _with_csrf(
+            RedirectResponse(f"/login?next={next_url}", status_code=303)
+        )
 
-    return await call_next(request)
+    return _with_csrf(await call_next(request))
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -83,5 +106,5 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-app.include_router(web_router)
-app.include_router(user_router)
+app.include_router(web_router, dependencies=[Depends(verify_csrf)])
+app.include_router(user_router, dependencies=[Depends(verify_csrf)])

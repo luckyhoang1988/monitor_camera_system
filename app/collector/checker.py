@@ -16,14 +16,21 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from app.collector.http_pool import get_client
 from app.collector.isapi_client import (
     ChannelInfo,
     DeviceInfo,
     ISAPIAuthError,
     ISAPIClient,
     ISAPIError,
+    get_cert_fingerprint,
+    normalize_fingerprint,
 )
 from app.enums import NVRStatus
+
+
+class TLSFingerprintMismatch(ISAPIError):
+    """Fingerprint cert TLS không khớp giá trị đã pin (nghi ngờ MITM)."""
 
 
 @dataclass
@@ -78,6 +85,17 @@ async def check_tcp_port(host: str, port: int, timeout: int = 3) -> bool:
         return False
 
 
+async def _assert_fingerprint(
+    host: str, port: int, tls_fingerprint: str, timeout: int
+) -> None:
+    """Pin SHA-256 cert; sai -> raise TLSFingerprintMismatch (nghi ngờ MITM)."""
+    actual = await get_cert_fingerprint(host, port, timeout=min(timeout, 5))
+    if normalize_fingerprint(actual) != normalize_fingerprint(tls_fingerprint):
+        raise TLSFingerprintMismatch(
+            f"TLS fingerprint không khớp (nghi ngờ MITM): thực tế {actual}"
+        )
+
+
 async def check_nvr(
     host: str,
     username: str,
@@ -85,19 +103,44 @@ async def check_nvr(
     port: int = 80,
     use_https: bool = False,
     timeout: int = 10,
+    *,
+    tls_fingerprint: str | None = None,
+    retries: int = 0,
+    retry_backoff_base: float = 0.5,
+    fetch_channels: bool = True,
 ) -> NVRCheckResult:
-    """Kiểm tra một NVR theo 3 lớp, trả về trạng thái thô (raw_status)."""
+    """Kiểm tra một NVR theo 3 lớp, trả về trạng thái thô (raw_status).
+
+    - Dùng `AsyncClient` dùng chung từ pool (verify/timeout cấu hình ở pool).
+    - `tls_fingerprint`: nếu đặt (và use_https), pin SHA-256 cert -> chặn MITM
+      dù verify=False; sai fingerprint -> Warning kèm last_error rõ ràng.
+    - `fetch_channels=False`: chỉ kiểm tra sức khỏe NVR (device), bỏ qua camera
+      (dùng cho job health tần suất cao; camera quét ở job riêng).
+    """
     ping_ok = await ping_host(host, timeout=min(timeout, 3))
     port_ok = await check_tcp_port(host, port, timeout=min(timeout, 3))
 
-    client_obj = ISAPIClient(host, username, password, port, use_https, timeout)
+    client_obj = ISAPIClient(
+        host,
+        username,
+        password,
+        port,
+        use_https,
+        timeout,
+        retries=retries,
+        retry_backoff_base=retry_backoff_base,
+    )
     start = time.perf_counter()
     try:
-        async with httpx.AsyncClient(
-            base_url=client_obj.base_url, timeout=timeout, verify=False
-        ) as client:
-            device = await client_obj.get_device_info(client)
-            channels = await client_obj.get_channels(client)
+        # Pin fingerprint trước khi gọi API (chỉ khi HTTPS + đã cấu hình).
+        if use_https and tls_fingerprint:
+            await _assert_fingerprint(host, port, tls_fingerprint, timeout)
+
+        client = await get_client(client_obj.base_url)
+        device = await client_obj.get_device_info(client)
+        channels = (
+            await client_obj.get_channels(client) if fetch_channels else []
+        )
         elapsed = int((time.perf_counter() - start) * 1000)
         return NVRCheckResult(
             raw_status=NVRStatus.ONLINE,
@@ -114,7 +157,7 @@ async def check_nvr(
             port_ok=port_ok,
             error=str(exc),
         )
-    except (ISAPIError, httpx.HTTPError) as exc:
+    except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
         # Tới được thiết bị nhưng API lỗi/timeout -> Warning; nếu không -> Network Error
         raw = NVRStatus.WARNING if (ping_ok or port_ok) else NVRStatus.NETWORK_ERROR
         return NVRCheckResult(
@@ -123,6 +166,43 @@ async def check_nvr(
             port_ok=port_ok,
             error=str(exc),
         )
+
+
+async def fetch_nvr_channels(
+    host: str,
+    username: str,
+    password: str,
+    port: int = 80,
+    use_https: bool = False,
+    timeout: int = 10,
+    *,
+    tls_fingerprint: str | None = None,
+    retries: int = 0,
+    retry_backoff_base: float = 0.5,
+) -> tuple[list[ChannelInfo], str | None]:
+    """Chỉ lấy danh sách kênh + trạng thái camera của NVR (job camera).
+
+    Dùng cho NVR đã Online: bỏ ping/port/deviceInfo để giảm tải. Trả về
+    `(channels, error)`; lỗi chỉ trả error để caller log, không đổi trạng thái NVR.
+    """
+    client_obj = ISAPIClient(
+        host,
+        username,
+        password,
+        port,
+        use_https,
+        timeout,
+        retries=retries,
+        retry_backoff_base=retry_backoff_base,
+    )
+    try:
+        if use_https and tls_fingerprint:
+            await _assert_fingerprint(host, port, tls_fingerprint, timeout)
+        client = await get_client(client_obj.base_url)
+        channels = await client_obj.get_channels(client)
+        return channels, None
+    except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
+        return [], str(exc)
 
 
 # --- State machine chống flapping (hàm thuần, dễ test) ---

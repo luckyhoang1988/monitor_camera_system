@@ -40,7 +40,16 @@ from app.services.report_service import build_uptime_report
 router = APIRouter()
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
-templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+
+def _csrf_context(request: Request) -> dict:
+    """Phơi token CSRF (do middleware đặt ở request.state) cho mọi template."""
+    return {"csrf_token": getattr(request.state, "csrf_token", "")}
+
+
+templates = Jinja2Templates(
+    directory=str(_TEMPLATES_DIR), context_processors=[_csrf_context]
+)
 
 # Map trạng thái -> class màu Bootstrap (badge).
 _BADGE = {
@@ -192,7 +201,8 @@ async def nvr_list(
 # --- CRUD NVR (đặt /nvrs/new TRƯỚC /nvrs/{nvr_id} để không bị nuốt route) ---
 
 def _form_to_dict(
-    name, host, username, password, port, use_https, location, area, model, channels, note, enabled
+    name, host, username, password, port, use_https, location, area, model,
+    channels, note, enabled, tls_fingerprint=""
 ) -> dict:
     return {
         "name": name,
@@ -207,6 +217,7 @@ def _form_to_dict(
         "channel_count": channels,
         "note": note,
         "enabled": enabled,
+        "tls_fingerprint": tls_fingerprint,
     }
 
 
@@ -233,10 +244,12 @@ async def nvr_create(
     channels: int | None = Form(None),
     note: str = Form(""),
     enabled: bool = Form(False),
+    tls_fingerprint: str = Form(""),
     session: AsyncSession = Depends(get_session),
 ):
     data = _form_to_dict(
-        name, host, username, password, port, use_https, location, area, model, channels, note, enabled
+        name, host, username, password, port, use_https, location, area, model,
+        channels, note, enabled, tls_fingerprint
     )
     await create_nvr(session, data)
     return RedirectResponse("/nvrs", status_code=303)
@@ -273,10 +286,12 @@ async def nvr_update(
     channels: int | None = Form(None),
     note: str = Form(""),
     enabled: bool = Form(False),
+    tls_fingerprint: str = Form(""),
     session: AsyncSession = Depends(get_session),
 ):
     data = _form_to_dict(
-        name, host, username, password, port, use_https, location, area, model, channels, note, enabled
+        name, host, username, password, port, use_https, location, area, model,
+        channels, note, enabled, tls_fingerprint
     )
     await update_nvr(session, nvr_id, data)
     return RedirectResponse(f"/nvrs/{nvr_id}", status_code=303)

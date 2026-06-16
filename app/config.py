@@ -34,9 +34,24 @@ class Settings(BaseSettings):
     camera_check_interval: int = 600
 
     # --- Tham số kiểm tra ---
-    request_timeout: int = 10
+    request_timeout: int = 10  # timeout tổng (giây) — dùng cho ping/port và fallback
     max_concurrency: int = 20
     fail_threshold: int = 3
+
+    # Timeout chi tiết cho HTTP ISAPI (giây). Tránh treo lâu ở một pha.
+    connect_timeout: float = 5.0
+    read_timeout: float = 10.0
+    write_timeout: float = 5.0
+
+    # Retry cho lỗi mạng tạm thời (connect/read timeout) — không retry 401.
+    request_retries: int = 2
+    retry_backoff_base: float = 0.5  # giây; backoff mũ + jitter
+
+    # --- Bảo mật kết nối NVR (TLS) ---
+    # NVR Hikvision thường dùng cert tự ký -> mặc định không verify CA.
+    # Production nên pin fingerprint per-NVR (cột tls_fingerprint) để chặn MITM.
+    nvr_tls_verify: bool = False  # True để bật xác thực chứng chỉ TLS theo CA
+    nvr_ca_cert_path: str | None = None  # CA bundle nội bộ (nếu có)
 
     # --- Ngưỡng cảnh báo ---
     slow_response_ms: int = 5000
@@ -49,6 +64,11 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Ho_Chi_Minh"
     debug: bool = True
     echo_sql: bool = False  # bật để in câu lệnh SQL (chỉ khi debug DB)
+
+    @property
+    def nvr_verify(self) -> bool | str:
+        """Giá trị `verify` cho httpx: ưu tiên CA bundle nội bộ, sau đó cờ verify."""
+        return self.nvr_ca_cert_path or self.nvr_tls_verify
 
 
 @lru_cache

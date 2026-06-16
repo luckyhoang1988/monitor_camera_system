@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import Alert
 from app.enums import AlertSeverity, AlertStatus, AlertType, NVRStatus
-from app.services.status_service import NVRUpdateOutcome
+from app.services.status_service import NVRHealthOutcome
 
 # Trạng thái coi là "đang lỗi" của NVR.
 _DOWN_STATES = {NVRStatus.OFFLINE, NVRStatus.NETWORK_ERROR, NVRStatus.AUTH_ERROR}
@@ -74,10 +74,10 @@ async def _create_alert(
     )
 
 
-async def process_outcome(
-    session: AsyncSession, outcome: NVRUpdateOutcome, nvr_name: str
+async def process_nvr_alerts(
+    session: AsyncSession, outcome: NVRHealthOutcome, nvr_name: str
 ) -> None:
-    """Tạo/resolve alert dựa trên chuyển trạng thái của một NVR."""
+    """Tạo/resolve alert cấp NVR (offline/auth/recovery/slow) theo chuyển trạng thái."""
     settings = get_settings()
     prev, new = outcome.prev_status, outcome.new_status
 
@@ -132,16 +132,29 @@ async def process_outcome(
     elif new == NVRStatus.ONLINE:
         await _resolve_open_alerts(session, outcome.nvr_id, AlertType.SLOW_RESPONSE)
 
-    # 5. Camera offline trong NVR.
-    if outcome.camera_offline_count > 0:
+
+async def process_camera_alerts(
+    session: AsyncSession,
+    nvr_id: int,
+    nvr_name: str,
+    offline_count: int,
+) -> None:
+    """Tạo/resolve alert camera offline (>= camera_offline_alert_min phút).
+
+    Gọi ở job camera cho NVR đang Online: `offline_count` là số camera offline
+    đủ lâu. 0 -> resolve alert camera đang mở (đã hồi phục).
+    """
+    settings = get_settings()
+    if offline_count > 0:
         await _create_alert(
             session,
-            nvr_id=outcome.nvr_id,
+            nvr_id=nvr_id,
             alert_type=AlertType.CAMERA_OFFLINE,
             severity=AlertSeverity.WARNING,
             message=(
-                f"NVR '{nvr_name}' có {outcome.camera_offline_count} camera offline."
+                f"NVR '{nvr_name}' có {offline_count} camera offline "
+                f"quá {settings.camera_offline_alert_min} phút."
             ),
         )
-    elif new == NVRStatus.ONLINE:
-        await _resolve_open_alerts(session, outcome.nvr_id, AlertType.CAMERA_OFFLINE)
+    else:
+        await _resolve_open_alerts(session, nvr_id, AlertType.CAMERA_OFFLINE)

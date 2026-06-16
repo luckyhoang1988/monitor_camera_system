@@ -18,11 +18,13 @@
       <td class="text-truncate" style="max-width: 220px;">{{ r.nvr.last_error or "" }}</td>
       <td style="white-space: nowrap;">
         <form method="post" action="/nvrs/{{ r.nvr.id }}/check" class="d-inline">
+          {% include "partials/_csrf.html" %}
           <button type="submit" class="btn btn-success btn-sm py-0">Kiểm tra</button>
         </form>
         <a href="/nvrs/{{ r.nvr.id }}/edit" class="btn btn-outline-secondary btn-sm py-0">Sửa</a>
         <form method="post" action="/nvrs/{{ r.nvr.id }}/delete" class="d-inline"
               onsubmit="return confirm('Xóa NVR {{ r.nvr.name }}?');">
+          {% include "partials/_csrf.html" %}
           <button type="submit" class="btn btn-outline-danger btn-sm py-0">Xóa</button>
         </form>
       </td>
