@@ -49,13 +49,36 @@ docker compose exec app python -m scripts.manage_user add \
 ```
 Sau đó đăng nhập web và quản lý thêm user ở `/users`.
 
-## 6. Truy cập & reverse proxy
-Mặc định app chỉ lắng nghe `127.0.0.1:8080` trên host (an toàn). Hai lựa chọn:
+## 6. Truy cập & HTTPS (Caddy + CA nội bộ)
+App chỉ lắng nghe `127.0.0.1:8080`; ra LAN đi qua service **Caddy** (đã có trong
+`docker-compose.yml`) cấp TLS ở cổng 443. Vì chạy theo IP nội bộ (không domain
+public) nên dùng **CA nội bộ tự cấp**, không dùng Let's Encrypt.
 
-- **Có domain/HTTPS (khuyến nghị):** đặt nginx/Caddy/Traefik trước app, proxy về
-  `127.0.0.1:8080`, cấp TLS, rồi đặt `COOKIE_SECURE=true` và `docker compose up -d`.
-- **LAN nội bộ nhanh:** sửa `docker-compose.yml` cổng app thành `"8080:8080"` để mở ra
-  LAN (cân nhắc rủi ro — dashboard có credential NVR; nên ít nhất giữ đăng nhập bật).
+Các bước (chạy trên server):
+```bash
+# 1. Sinh CA nội bộ + cert server cho IP (mặc định 10.0.193.233).
+#    SRV_IP=<ip-khac> ./scripts/gen_certs.sh   # nếu IP khác
+chmod +x scripts/gen_certs.sh && ./scripts/gen_certs.sh
+
+# 2. Bật cookie Secure (đã có HTTPS) trong .env
+#    COOKIE_SECURE=true
+
+# 3. Khởi động (Caddy mở 80->redirect, 443->app)
+docker compose up -d
+
+# 4. Kiểm tra (dùng CA vừa tạo)
+curl --cacert tls/ca.crt https://10.0.193.233/health   # {"status":"ok"}
+```
+
+**Cài root CA lên máy client để hết cảnh báo** (làm 1 lần/máy): lấy file
+`tls/ca.crt` từ server, cài vào *Trusted Root Certification Authorities*:
+- Windows: nhấp đôi `ca.crt` → *Install Certificate* → *Local Machine* →
+  *Place all certificates in the following store* → *Trusted Root Certification
+  Authorities*. (Hoặc đẩy qua Group Policy cho cả miền.)
+- Sau đó truy cập `https://10.0.193.233` không còn cảnh báo.
+
+> Chạy lại `gen_certs.sh` chỉ cấp lại cert server, **giữ nguyên CA** → client đã
+> cài `ca.crt` không phải cài lại. CA/cert nằm trong `tls/` (đã `.gitignore`).
 
 ## 7. Vận hành thường ngày
 ```bash

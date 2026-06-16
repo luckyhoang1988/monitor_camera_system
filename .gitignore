@@ -15,6 +15,9 @@ env/
 .env
 *.key
 
+# TLS — CA & cert nội bộ (sinh bằng scripts/gen_certs.sh, KHÔNG commit)
+tls/
+
 # IDE
 .vscode/
 .idea/
