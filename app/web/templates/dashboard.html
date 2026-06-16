@@ -6,11 +6,40 @@
     <h3 class="mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Tổng quan hệ thống</h3>
     <p class="text-muted mb-0">Trạng thái đầu ghi &amp; camera toàn hệ thống</p>
   </div>
-  <a href="/nvrs" class="btn btn-primary"><i class="bi bi-hdd-stack me-1"></i>Danh sách NVR</a>
+  <div class="d-flex gap-2">
+    <button id="toggle-blink" type="button" class="btn btn-outline-secondary">
+      <i class="bi bi-bell-slash me-1"></i><span>Tắt nhấp nháy</span>
+    </button>
+    <a href="/nvrs" class="btn btn-primary"><i class="bi bi-hdd-stack me-1"></i>Danh sách NVR</a>
+  </div>
 </div>
 
 <!-- Tự động làm mới mỗi 30s qua HTMX polling (trạng thái + hiệu ứng nhấp nháy) -->
 <div id="dashboard-body" hx-get="/" hx-trigger="every 30s" hx-swap="innerHTML">
   {% include "partials/dashboard_body.html" %}
 </div>
+
+<script>
+  (function () {
+    var KEY = 'nvr_alerts_muted';
+    var body = document.getElementById('dashboard-body');
+    var btn = document.getElementById('toggle-blink');
+    var icon = btn.querySelector('i');
+    var label = btn.querySelector('span');
+
+    function apply(muted) {
+      body.classList.toggle('alerts-muted', muted);
+      icon.className = 'bi me-1 ' + (muted ? 'bi-bell' : 'bi-bell-slash');
+      label.textContent = muted ? 'Bật nhấp nháy' : 'Tắt nhấp nháy';
+    }
+
+    apply(localStorage.getItem(KEY) === '1');
+
+    btn.addEventListener('click', function () {
+      var muted = !body.classList.contains('alerts-muted');
+      localStorage.setItem(KEY, muted ? '1' : '0');
+      apply(muted);
+    });
+  })();
+</script>
 {% endblock %}
