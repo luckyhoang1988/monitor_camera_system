@@ -1,8 +1,43 @@
 {% extends "base.html" %}
 {% block title %}Cảnh báo — Check_NVR{% endblock %}
 {% block content %}
-<!-- Panel dung lượng DB/disk: nạp khi mở trang + tự làm mới mỗi 60s -->
-<div hx-get="/alerts/storage" hx-trigger="load, every 60s" hx-swap="innerHTML"></div>
+<!-- Panel dung lượng DB/disk: nạp khi mở trang, tự làm mới mỗi 60s + sau khi xóa log -->
+<div hx-get="/alerts/storage" hx-trigger="load, every 60s, refreshStorage from:body" hx-swap="innerHTML"></div>
+
+{% if request.state.role == 'admin' %}
+<!-- Xóa log thủ công theo khoảng ngày để giải phóng disk -->
+<div class="card mb-3">
+  <div class="card-body">
+    <h6 class="card-title">
+      <i class="bi bi-trash3 me-2"></i>Xóa log theo khoảng ngày
+    </h6>
+    <p class="small text-muted mb-3">
+      Xóa log trạng thái NVR &amp; camera trong khoảng ngày đã chọn (theo giờ local)
+      để giải phóng dung lượng. Không xóa lịch sử cảnh báo.
+    </p>
+    <form hx-post="/alerts/purge" hx-target="#purge-result" hx-swap="innerHTML"
+          hx-confirm="Xóa toàn bộ log trạng thái trong khoảng ngày đã chọn? Thao tác không thể hoàn tác.">
+      {% include "partials/_csrf.html" %}
+      <div class="row g-2 align-items-end">
+        <div class="col-auto">
+          <label class="form-label small mb-1">Từ ngày</label>
+          <input type="date" name="from_date" class="form-control form-control-sm" required>
+        </div>
+        <div class="col-auto">
+          <label class="form-label small mb-1">Đến ngày</label>
+          <input type="date" name="to_date" class="form-control form-control-sm" required>
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-sm btn-danger">
+            <i class="bi bi-trash3 me-1"></i>Xóa log
+          </button>
+        </div>
+      </div>
+    </form>
+    <div id="purge-result" class="mt-3"></div>
+  </div>
+</div>
+{% endif %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3 class="mb-0">Cảnh báo</h3>

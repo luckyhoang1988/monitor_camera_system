@@ -67,3 +67,40 @@ async def purge_old_logs(
         camera_logs=cam_res.rowcount or 0,
         resolved_alerts=alert_res.rowcount or 0,
     )
+
+
+async def purge_logs_in_range(
+    session: AsyncSession,
+    *,
+    start: datetime,
+    end: datetime,
+) -> PurgeResult:
+    """Xóa thủ công log trạng thái trong khoảng [start, end] (UTC, bao gồm 2 đầu).
+
+    Dùng cho nút "xóa tay" trên trang Cảnh báo khi disk báo đầy — chọn từ ngày tới
+    ngày để giải phóng dung lượng. Chỉ đụng vào `*_status_logs` (phần chiếm chỗ
+    nhiều nhất); KHÔNG xóa alert để tránh mất lịch sử cảnh báo.
+
+    `start`/`end` phải là datetime timezone-aware. KHÔNG commit — caller chịu trách
+    nhiệm commit/rollback. Trả về số dòng đã xóa từng bảng.
+    """
+    if start > end:
+        raise ValueError("start phải <= end")
+
+    nvr_res = await session.execute(
+        delete(NVRStatusLog).where(
+            NVRStatusLog.checked_at >= start,
+            NVRStatusLog.checked_at <= end,
+        )
+    )
+    cam_res = await session.execute(
+        delete(CameraStatusLog).where(
+            CameraStatusLog.checked_at >= start,
+            CameraStatusLog.checked_at <= end,
+        )
+    )
+
+    return PurgeResult(
+        nvr_logs=nvr_res.rowcount or 0,
+        camera_logs=cam_res.rowcount or 0,
+    )

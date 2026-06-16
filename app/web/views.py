@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -39,6 +39,7 @@ from app.services.query_service import (
 from app.services.excel_export import build_offline_cameras_xlsx, build_report_xlsx
 from app.services.report_service import build_uptime_report
 from app.services.system_service import get_storage_usage
+from app.services.retention_service import purge_logs_in_range
 
 router = APIRouter()
 
@@ -408,3 +409,40 @@ async def alerts_storage(
     return templates.TemplateResponse(
         request, "partials/storage_panel.html", {"storage": storage}
     )
+
+
+@router.post("/alerts/purge", dependencies=[Depends(require_admin)])
+async def alerts_purge(
+    request: Request,
+    from_date: str = Form(...),
+    to_date: str = Form(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Xóa thủ công log trạng thái trong khoảng ngày (giờ local) — giải phóng disk.
+
+    Người dùng chọn từ ngày tới ngày trên giao diện; diễn giải theo timezone local
+    (đầu ngày from_date → cuối ngày to_date) rồi đổi sang UTC để khớp `checked_at`.
+    """
+    tz = ZoneInfo(get_settings().timezone)
+    ctx: dict = {}
+    try:
+        start_d = datetime.strptime(from_date, "%Y-%m-%d").date()
+        end_d = datetime.strptime(to_date, "%Y-%m-%d").date()
+        if start_d > end_d:
+            raise ValueError("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.")
+        start = datetime.combine(start_d, time.min, tzinfo=tz).astimezone(timezone.utc)
+        end = datetime.combine(end_d, time.max, tzinfo=tz).astimezone(timezone.utc)
+        result = await purge_logs_in_range(session, start=start, end=end)
+        await session.commit()
+        ctx["result"] = result
+        ctx["from_date"] = from_date
+        ctx["to_date"] = to_date
+    except ValueError as exc:
+        ctx["error"] = str(exc) or "Ngày không hợp lệ."
+
+    resp = templates.TemplateResponse(
+        request, "partials/purge_result.html", ctx
+    )
+    # Báo cho panel dung lượng làm mới ngay sau khi xóa.
+    resp.headers["HX-Trigger"] = "refreshStorage"
+    return resp
