@@ -1,65 +1,73 @@
 {% extends "base.html" %}
-{% block title %}Tổng quan — Chek_NVR{% endblock %}
+{% block title %}Tổng quan — Check_NVR{% endblock %}
 {% block content %}
-<h3 class="mb-4">Tổng quan hệ thống</h3>
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h3 class="mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Tổng quan hệ thống</h3>
+    <p class="text-muted mb-0">Trạng thái đầu ghi &amp; camera toàn hệ thống</p>
+  </div>
+  <a href="/nvrs" class="btn btn-primary"><i class="bi bi-hdd-stack me-1"></i>Danh sách NVR</a>
+</div>
 
+<h6 class="text-uppercase text-muted fw-semibold small mb-2">Đầu ghi (NVR)</h6>
 <div class="row g-3 mb-4">
-  <div class="col-md-3">
-    <div class="card text-bg-primary"><div class="card-body">
-      <h6 class="card-title">Tổng NVR</h6>
-      <p class="display-6 mb-0">{{ overview.nvr_total }}</p>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-bg-primary h-100"><div class="card-body d-flex align-items-center justify-content-between">
+      <div><h6 class="card-title mb-1 opacity-75">Tổng NVR</h6><p class="display-6 fw-bold mb-0">{{ overview.nvr_total }}</p></div>
+      <i class="bi bi-hdd-stack-fill fs-1 opacity-50"></i>
     </div></div>
   </div>
-  <div class="col-md-3">
-    <div class="card text-bg-success"><div class="card-body">
-      <h6 class="card-title">NVR Online</h6>
-      <p class="display-6 mb-0">{{ overview.nvr_online }}</p>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-bg-success h-100"><div class="card-body d-flex align-items-center justify-content-between">
+      <div><h6 class="card-title mb-1 opacity-75">NVR Online</h6><p class="display-6 fw-bold mb-0">{{ overview.nvr_online }}</p></div>
+      <i class="bi bi-check-circle-fill fs-1 opacity-50"></i>
     </div></div>
   </div>
-  <div class="col-md-3">
-    <div class="card text-bg-danger"><div class="card-body">
-      <h6 class="card-title">NVR Offline</h6>
-      <p class="display-6 mb-0">{{ overview.nvr_offline }}</p>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-bg-danger h-100"><div class="card-body d-flex align-items-center justify-content-between">
+      <div><h6 class="card-title mb-1 opacity-75">NVR Offline</h6><p class="display-6 fw-bold mb-0">{{ overview.nvr_offline }}</p></div>
+      <i class="bi bi-x-circle-fill fs-1 opacity-50"></i>
     </div></div>
   </div>
-  <div class="col-md-3">
-    <div class="card text-bg-warning"><div class="card-body">
-      <h6 class="card-title">NVR Warning</h6>
-      <p class="display-6 mb-0">{{ overview.nvr_warning }}</p>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-bg-warning h-100"><div class="card-body d-flex align-items-center justify-content-between">
+      <div><h6 class="card-title mb-1 opacity-75">NVR Warning</h6><p class="display-6 fw-bold mb-0">{{ overview.nvr_warning }}</p></div>
+      <i class="bi bi-exclamation-triangle-fill fs-1 opacity-50"></i>
     </div></div>
   </div>
 </div>
 
+<h6 class="text-uppercase text-muted fw-semibold small mb-2">Camera</h6>
 <div class="row g-3">
-  <div class="col-md-3">
-    <div class="card"><div class="card-body">
-      <h6 class="card-title text-muted">Tổng camera</h6>
-      <p class="display-6 mb-0">{{ overview.camera_total }}</p>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card h-100"><div class="card-body d-flex align-items-center justify-content-between">
+      <div><h6 class="card-title text-muted mb-1">Tổng camera</h6><p class="display-6 fw-bold mb-0">{{ overview.camera_total }}</p></div>
+      <i class="bi bi-camera-video fs-1 text-muted opacity-50"></i>
     </div></div>
   </div>
-  <div class="col-md-3">
-    <div class="card border-success"><div class="card-body">
-      <h6 class="card-title text-success">Camera Online</h6>
-      <p class="display-6 mb-0">{{ overview.camera_online }}</p>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card border-start border-success border-4 h-100"><div class="card-body d-flex align-items-center justify-content-between">
+      <div><h6 class="card-title text-success mb-1">Camera Online</h6><p class="display-6 fw-bold mb-0">{{ overview.camera_online }}</p></div>
+      <i class="bi bi-camera-video-fill fs-1 text-success opacity-50"></i>
     </div></div>
   </div>
-  <div class="col-md-3">
-    <div class="card border-danger"><div class="card-body">
-      <h6 class="card-title text-danger">Camera Offline</h6>
-      <p class="display-6 mb-0">{{ overview.camera_offline }}</p>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card border-start border-danger border-4 h-100"><div class="card-body d-flex align-items-center justify-content-between">
+      <div><h6 class="card-title text-danger mb-1">Camera Offline</h6><p class="display-6 fw-bold mb-0">{{ overview.camera_offline }}</p></div>
+      <i class="bi bi-camera-video-off-fill fs-1 text-danger opacity-50"></i>
     </div></div>
   </div>
-  <div class="col-md-3">
-    <div class="card border-info"><div class="card-body">
-      <h6 class="card-title text-info">Tỷ lệ hoạt động</h6>
-      <p class="display-6 mb-0">{{ overview.uptime_ratio }}%</p>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card border-start border-info border-4 h-100"><div class="card-body d-flex align-items-center justify-content-between">
+      <div><h6 class="card-title text-info mb-1">Tỷ lệ hoạt động</h6><p class="display-6 fw-bold mb-0">{{ overview.uptime_ratio }}%</p></div>
+      <i class="bi bi-graph-up-arrow fs-1 text-info opacity-50"></i>
     </div></div>
   </div>
 </div>
 
-<div class="card mt-4 border-danger">
+<div class="card mt-4">
   <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-    <span>📷 Camera đang mất tín hiệu</span>
+    <span><i class="bi bi-camera-video-off me-2"></i>Camera đang mất tín hiệu</span>
     <span class="badge text-bg-light">{{ offline_cameras | length }}</span>
   </div>
   <div class="card-body p-0">
@@ -90,7 +98,7 @@
         </tr>
         {% else %}
         <tr><td colspan="8" class="text-center text-success py-3">
-          Tất cả camera đang hoạt động bình thường. 🎉
+          <i class="bi bi-check-circle me-1"></i>Tất cả camera đang hoạt động bình thường. 🎉
         </td></tr>
         {% endfor %}
       </tbody>

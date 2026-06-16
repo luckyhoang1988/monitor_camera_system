@@ -3,38 +3,65 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Chek_NVR{% endblock %}</title>
+  <title>{% block title %}Check_NVR{% endblock %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
+  <style>
+    body { background-color: #f3f5fa; }
+    .app-container { max-width: 1320px; }
+    .navbar-brand { font-weight: 700; letter-spacing: .3px; }
+    .navbar .nav-link { border-radius: .5rem; padding-inline: .85rem; transition: background-color .15s ease; }
+    .navbar .nav-link:hover { background-color: rgba(255,255,255,.08); }
+    .navbar .nav-link.active { background-color: rgba(255,255,255,.18); font-weight: 600; }
+    .card { border: none; border-radius: .85rem; box-shadow: 0 .125rem .4rem rgba(18,38,63,.06); }
+    .stat-card { transition: transform .15s ease, box-shadow .15s ease; }
+    .stat-card:hover { transform: translateY(-3px); box-shadow: 0 .5rem 1.4rem rgba(18,38,63,.16); }
+  </style>
 </head>
-<body class="bg-light">
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-    <div class="container-fluid">
-      <a class="navbar-brand" href="/">📹 Chek_NVR</a>
-      <div class="navbar-nav me-auto">
-        <a class="nav-link" href="/nvrs">Danh sách NVR</a>
-        <a class="nav-link" href="/reports">Báo cáo</a>
-        <a class="nav-link" href="/alerts">Cảnh báo</a>
-        {% if request.state.role == 'admin' %}
-        <a class="nav-link" href="/users">Người dùng</a>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top mb-4">
+    <div class="container-fluid app-container">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="/">
+        <i class="bi bi-camera-video-fill text-info"></i><span>Check_NVR</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainnav"
+              aria-controls="mainnav" aria-expanded="false" aria-label="Mở menu">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="mainnav">
+        {% set path = request.url.path %}
+        <div class="navbar-nav me-auto">
+          <a class="nav-link {{ 'active' if path.startswith('/nvrs') }}" href="/nvrs">
+            <i class="bi bi-hdd-stack me-1"></i>Danh sách NVR</a>
+          <a class="nav-link {{ 'active' if path.startswith('/reports') }}" href="/reports">
+            <i class="bi bi-bar-chart-line me-1"></i>Báo cáo</a>
+          <a class="nav-link {{ 'active' if path.startswith('/alerts') }}" href="/alerts">
+            <i class="bi bi-bell me-1"></i>Cảnh báo</a>
+          {% if request.state.role == 'admin' %}
+          <a class="nav-link {{ 'active' if path.startswith('/users') }}" href="/users">
+            <i class="bi bi-people me-1"></i>Người dùng</a>
+          {% endif %}
+        </div>
+        {% if request.state.username %}
+        <div class="navbar-nav align-items-lg-center">
+          <a class="nav-link {{ 'active' if path.startswith('/account') }}" href="/account">
+            <i class="bi bi-person-circle me-1"></i>{{ request.state.username }}
+            <span class="badge text-bg-{{ 'warning' if request.state.role == 'admin' else 'secondary' }}">{{ request.state.role }}</span>
+          </a>
+          <form method="post" action="/logout" class="d-inline ms-lg-2 mt-2 mt-lg-0">
+            {% include "partials/_csrf.html" %}
+            <button type="submit" class="btn btn-sm btn-outline-light">
+              <i class="bi bi-box-arrow-right me-1"></i>Đăng xuất</button>
+          </form>
+        </div>
         {% endif %}
       </div>
-      {% if request.state.username %}
-      <div class="navbar-nav">
-        <a class="nav-link" href="/account">
-          👤 {{ request.state.username }}
-          <span class="badge text-bg-{{ 'warning' if request.state.role == 'admin' else 'secondary' }}">{{ request.state.role }}</span>
-        </a>
-        <form method="post" action="/logout" class="d-inline ms-2">
-          {% include "partials/_csrf.html" %}
-          <button type="submit" class="btn btn-sm btn-outline-light">Đăng xuất</button>
-        </form>
-      </div>
-      {% endif %}
     </div>
   </nav>
-  <div class="container-fluid">
+  <main class="container-fluid app-container pb-5">
     {% block content %}{% endblock %}
-  </div>
+  </main>
 </body>
 </html>
