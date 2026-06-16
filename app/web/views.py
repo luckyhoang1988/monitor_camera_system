@@ -180,11 +180,14 @@ async def account_change_password(
 async def dashboard(request: Request, session: AsyncSession = Depends(get_session)):
     overview = await get_overview(session)
     offline_cameras = await list_offline_cameras(session)
-    return templates.TemplateResponse(
-        request,
-        "dashboard.html",
-        {"overview": overview, "offline_cameras": offline_cameras},
+    ctx = {"overview": overview, "offline_cameras": offline_cameras}
+    # HTMX polling -> chỉ swap phần thân (cards + bảng camera mất tín hiệu).
+    template = (
+        "partials/dashboard_body.html"
+        if request.headers.get("HX-Request")
+        else "dashboard.html"
     )
+    return templates.TemplateResponse(request, template, ctx)
 
 
 @router.get("/export/offline-cameras")
