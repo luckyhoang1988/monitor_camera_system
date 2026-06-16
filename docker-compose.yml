@@ -9,7 +9,9 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # postgres:18+ lưu data trong subdir theo major-version -> mount ở
+      # /var/lib/postgresql (KHÔNG phải /data, sẽ bị từ chối khởi động ở pg18).
+      - pgdata:/var/lib/postgresql
     healthcheck:
       # $$ để biến được đánh giá TRONG container (không phải compose interpolation).
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
