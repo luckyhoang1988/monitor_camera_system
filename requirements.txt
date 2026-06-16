@@ -23,6 +23,9 @@ apscheduler==3.11.2
 jinja2==3.1.6
 python-multipart==0.0.32
 
+# Xuất báo cáo Excel
+openpyxl==3.1.5
+
 # Mã hóa mật khẩu NVR
 cryptography==49.0.0
 

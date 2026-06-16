@@ -55,7 +55,9 @@ class UptimeReport:
     system_camera_uptime: float
 
 
-async def nvr_uptime_rows(session: AsyncSession, days: int) -> list[NVRUptimeRow]:
+async def nvr_uptime_rows(
+    session: AsyncSession, days: int, *, area: str | None = None
+) -> list[NVRUptimeRow]:
     """Uptime từng NVR trong `days` ngày, sắp xếp uptime tăng dần (tệ nhất trước)."""
     cutoff = _cutoff(days)
     online_expr = func.sum(
@@ -78,6 +80,8 @@ async def nvr_uptime_rows(session: AsyncSession, days: int) -> list[NVRUptimeRow
         .group_by(NVRDevice.id, NVRDevice.name, NVRDevice.area)
         .order_by(NVRDevice.name)
     )
+    if area:
+        stmt = stmt.where(NVRDevice.area == area)
     rows = [
         NVRUptimeRow(
             nvr_id=nid,
@@ -94,7 +98,7 @@ async def nvr_uptime_rows(session: AsyncSession, days: int) -> list[NVRUptimeRow
 
 
 async def worst_cameras(
-    session: AsyncSession, days: int, *, limit: int = 15
+    session: AsyncSession, days: int, *, limit: int = 15, area: str | None = None
 ) -> list[CameraDowntimeRow]:
     """Top camera mất tín hiệu nhiều nhất (nhiều lần ghi Offline nhất)."""
     cutoff = _cutoff(days)
@@ -125,6 +129,8 @@ async def worst_cameras(
         .order_by(offline_expr.desc())
         .limit(limit)
     )
+    if area:
+        stmt = stmt.where(NVRDevice.area == area)
     return [
         CameraDowntimeRow(
             camera_id=cid,
@@ -141,33 +147,55 @@ async def worst_cameras(
     ]
 
 
-async def _system_uptime(session: AsyncSession, model, status_col, online_value, days):
+def _nvr_system_uptime(rows: list[NVRUptimeRow]) -> float:
+    """Uptime NVR toàn hệ thống = gộp số lần Online / tổng số lần kiểm tra các NVR."""
+    total = sum(r.total_checks for r in rows)
+    online = sum(r.online_checks for r in rows)
+    return _pct(online, total)
+
+
+async def _camera_system_uptime(
+    session: AsyncSession, days: int, *, area: str | None = None
+) -> float:
+    """Uptime camera toàn hệ thống, có thể lọc theo khu vực (join sang NVR)."""
     cutoff = _cutoff(days)
-    total = (
-        await session.scalar(
-            select(func.count()).select_from(model).where(model.checked_at >= cutoff)
-        )
-    ) or 0
+    base_filters = [CameraStatusLog.checked_at >= cutoff]
+
+    def _count(extra=()):
+        stmt = select(func.count()).select_from(CameraStatusLog)
+        if area:
+            stmt = stmt.join(
+                CameraChannel, CameraStatusLog.camera_id == CameraChannel.id
+            ).join(NVRDevice, CameraChannel.nvr_id == NVRDevice.id).where(
+                NVRDevice.area == area
+            )
+        return stmt.where(*base_filters, *extra)
+
+    total = (await session.scalar(_count())) or 0
     online = (
         await session.scalar(
-            select(func.count())
-            .select_from(model)
-            .where(model.checked_at >= cutoff, status_col == online_value)
+            _count((CameraStatusLog.status == CameraStatus.ONLINE.value,))
         )
     ) or 0
     return _pct(int(online), int(total))
 
 
-async def build_uptime_report(session: AsyncSession, days: int = 7) -> UptimeReport:
-    """Gộp toàn bộ số liệu cho trang báo cáo."""
-    nvr_rows = await nvr_uptime_rows(session, days)
-    cams = await worst_cameras(session, days)
-    sys_nvr = await _system_uptime(
-        session, NVRStatusLog, NVRStatusLog.status, NVRStatus.ONLINE.value, days
-    )
-    sys_cam = await _system_uptime(
-        session, CameraStatusLog, CameraStatusLog.status, CameraStatus.ONLINE.value, days
-    )
+async def build_uptime_report(
+    session: AsyncSession,
+    days: int = 7,
+    *,
+    area: str | None = None,
+    worst_limit: int = 15,
+) -> UptimeReport:
+    """Gộp toàn bộ số liệu cho trang báo cáo (có thể lọc theo khu vực).
+
+    `worst_limit` giới hạn số camera tệ nhất; bản xuất Excel truyền giá trị lớn để
+    lấy toàn bộ camera có lỗi thay vì chỉ top hiển thị trên web.
+    """
+    nvr_rows = await nvr_uptime_rows(session, days, area=area)
+    cams = await worst_cameras(session, days, area=area, limit=worst_limit)
+    sys_nvr = _nvr_system_uptime(nvr_rows)
+    sys_cam = await _camera_system_uptime(session, days, area=area)
     return UptimeReport(
         days=days,
         nvr_rows=nvr_rows,

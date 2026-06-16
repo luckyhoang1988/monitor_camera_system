@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +36,7 @@ from app.services.query_service import (
     list_nvrs,
     list_offline_cameras,
 )
+from app.services.excel_export import build_offline_cameras_xlsx, build_report_xlsx
 from app.services.report_service import build_uptime_report
 
 router = APIRouter()
@@ -183,6 +185,22 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
     )
 
 
+@router.get("/export/offline-cameras")
+async def export_offline_cameras(session: AsyncSession = Depends(get_session)):
+    """Xuất Excel danh sách camera đang mất tín hiệu (bảng trên trang Tổng quan)."""
+    rows = await list_offline_cameras(session)
+    content = build_offline_cameras_xlsx(rows)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"camera_mat_tin_hieu_{stamp}.xlsx"
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/nvrs", response_class=HTMLResponse)
 async def nvr_list(
     request: Request,
@@ -321,18 +339,49 @@ async def nvr_detail(
     return templates.TemplateResponse(request, "nvr_detail.html", detail)
 
 
+def _valid_days(days: int) -> int:
+    # Giới hạn khoảng thời gian hợp lệ để tránh truy vấn quá nặng.
+    return days if days in (1, 7, 30, 90) else 7
+
+
 @router.get("/reports", response_class=HTMLResponse)
 async def reports(
     request: Request,
     days: int = 7,
+    area: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    # Giới hạn khoảng thời gian hợp lệ để tránh truy vấn quá nặng.
-    if days not in (1, 7, 30, 90):
-        days = 7
-    report = await build_uptime_report(session, days)
+    days = _valid_days(days)
+    area = area or None
+    report = await build_uptime_report(session, days, area=area)
+    areas = [a for (a,) in (await session.execute(get_distinct_areas_stmt())).all()]
     return templates.TemplateResponse(
-        request, "reports.html", {"report": report, "days": days}
+        request,
+        "reports.html",
+        {"report": report, "days": days, "areas": areas, "sel_area": area},
+    )
+
+
+@router.get("/reports/export")
+async def reports_export(
+    days: int = 7,
+    area: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """Xuất báo cáo uptime ra Excel (.xlsx) theo bộ lọc hiện tại."""
+    days = _valid_days(days)
+    area = area or None
+    report = await build_uptime_report(session, days, area=area, worst_limit=1000)
+    content = build_report_xlsx(report, area=area)
+    suffix = f"_{area}" if area else ""
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"bao_cao_uptime_{days}ngay{suffix}_{stamp}.xlsx"
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

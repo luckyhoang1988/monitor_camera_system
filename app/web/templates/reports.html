@@ -1,13 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Báo cáo uptime — Check_NVR{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
   <h3 class="mb-0">Báo cáo uptime</h3>
-  <div class="btn-group" role="group" aria-label="Khoảng thời gian">
-    {% for d, label in [(1, "24 giờ"), (7, "7 ngày"), (30, "30 ngày"), (90, "90 ngày")] %}
-    <a href="/reports?days={{ d }}"
-       class="btn btn-sm {{ 'btn-primary' if days == d else 'btn-outline-primary' }}">{{ label }}</a>
-    {% endfor %}
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <div class="btn-group" role="group" aria-label="Khoảng thời gian">
+      {% for d, label in [(1, "24 giờ"), (7, "7 ngày"), (30, "30 ngày"), (90, "90 ngày")] %}
+      <a href="/reports?days={{ d }}{% if sel_area %}&area={{ sel_area | urlencode }}{% endif %}"
+         class="btn btn-sm {{ 'btn-primary' if days == d else 'btn-outline-primary' }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+
+    <form method="get" action="/reports" class="d-flex align-items-center gap-2 mb-0">
+      <input type="hidden" name="days" value="{{ days }}">
+      <select name="area" class="form-select form-select-sm" style="width:auto"
+              onchange="this.form.submit()">
+        <option value="">Tất cả khu vực</option>
+        {% for a in areas %}
+        <option value="{{ a }}" {{ 'selected' if a == sel_area else '' }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </form>
+
+    <a href="/reports/export?days={{ days }}{% if sel_area %}&area={{ sel_area | urlencode }}{% endif %}"
+       class="btn btn-sm btn-success">
+      <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel
+    </a>
   </div>
 </div>
 

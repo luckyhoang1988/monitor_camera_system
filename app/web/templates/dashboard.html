@@ -68,13 +68,20 @@
 <div class="card mt-4">
   <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
     <span><i class="bi bi-camera-video-off me-2"></i>Camera đang mất tín hiệu</span>
-    <span class="badge text-bg-light">{{ offline_cameras | length }}</span>
+    <span class="d-flex align-items-center gap-2">
+      <span class="badge text-bg-light">{{ offline_cameras | length }}</span>
+      {% if offline_cameras %}
+      <a href="/export/offline-cameras" class="btn btn-sm btn-light">
+        <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel
+      </a>
+      {% endif %}
+    </span>
   </div>
   <div class="card-body p-0">
     <table class="table table-sm table-hover mb-0 align-middle">
       <thead class="table-light"><tr>
         <th>Đầu ghi (NVR)</th><th>Khu vực</th><th>Kênh</th><th>Tên camera</th>
-        <th>IP</th><th>Trạng thái</th><th>Kiểm tra cuối</th><th></th>
+        <th>IP</th><th>Trạng thái</th><th>Mất tín hiệu từ</th><th>Kiểm tra cuối</th><th></th>
       </tr></thead>
       <tbody>
         {% for row in offline_cameras %}
@@ -89,6 +96,7 @@
           <td>{{ row.camera.name or "—" }}</td>
           <td>{{ row.camera.camera_ip or "—" }}</td>
           <td><span class="badge text-bg-{{ row.camera.current_status | badge }}">{{ row.camera.current_status }}</span></td>
+          <td>{% if row.camera.offline_since %}{{ row.camera.offline_since | localtime }}{% else %}—{% endif %}</td>
           <td>{{ row.camera.last_checked_at | localtime }}</td>
           <td>
             <a href="/nvrs/{{ row.camera.nvr_id }}" class="btn btn-outline-primary btn-sm">
@@ -97,7 +105,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="text-center text-success py-3">
+        <tr><td colspan="9" class="text-center text-success py-3">
           <i class="bi bi-check-circle me-1"></i>Tất cả camera đang hoạt động bình thường. 🎉
         </td></tr>
         {% endfor %}
