@@ -38,6 +38,7 @@ from app.services.query_service import (
 )
 from app.services.excel_export import build_offline_cameras_xlsx, build_report_xlsx
 from app.services.report_service import build_uptime_report
+from app.services.system_service import get_storage_usage
 
 router = APIRouter()
 
@@ -396,3 +397,14 @@ async def alerts(
     # HTMX polling -> chỉ swap phần bảng.
     template = "partials/alert_table.html" if request.headers.get("HX-Request") else "alerts.html"
     return templates.TemplateResponse(request, template, ctx)
+
+
+@router.get("/alerts/storage", response_class=HTMLResponse)
+async def alerts_storage(
+    request: Request, session: AsyncSession = Depends(get_session)
+):
+    """Panel dung lượng DB/disk (tự refresh độc lập với bảng cảnh báo)."""
+    storage = await get_storage_usage(session)
+    return templates.TemplateResponse(
+        request, "partials/storage_panel.html", {"storage": storage}
+    )

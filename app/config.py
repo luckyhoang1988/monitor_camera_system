@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # --- Ngưỡng cảnh báo ---
     slow_response_ms: int = 5000
     camera_offline_alert_min: int = 10
+    # Ngưỡng màu cho % disk đã dùng (panel giám sát dung lượng ở trang Cảnh báo).
+    disk_warn_pct: int = 80  # vàng khi >= ngưỡng này
+    disk_crit_pct: int = 90  # đỏ khi >= ngưỡng này
 
     # --- Retention ---
     log_retention_days: int = 90

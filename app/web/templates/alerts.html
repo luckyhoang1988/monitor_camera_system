@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Cảnh báo — Check_NVR{% endblock %}
 {% block content %}
+<!-- Panel dung lượng DB/disk: nạp khi mở trang + tự làm mới mỗi 60s -->
+<div hx-get="/alerts/storage" hx-trigger="load, every 60s" hx-swap="innerHTML"></div>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3 class="mb-0">Cảnh báo</h3>
   <div class="form-check form-switch">

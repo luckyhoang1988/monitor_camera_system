@@ -1,0 +1,51 @@
+{% set color = {"ok": "success", "warning": "warning", "danger": "danger"}[storage.level] %}
+<div class="card mb-3 border-{{ color }}">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="card-title mb-0">
+        <i class="bi bi-hdd-stack me-2"></i>Dung lượng lưu trữ
+      </h6>
+      <span class="badge text-bg-{{ color }}">Disk đã dùng {{ storage.disk_used_pct }}%</span>
+    </div>
+
+    <div class="row g-3 align-items-center">
+      <div class="col-md-3 col-6">
+        <div class="text-muted small">Database</div>
+        <div class="fs-5 fw-semibold">{{ storage.db_size_h }}</div>
+        <div class="small text-primary">{{ storage.db_pct_of_disk }}% so với disk</div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="text-muted small">Tổng disk</div>
+        <div class="fs-5 fw-semibold">{{ storage.disk_total_h }}</div>
+        <div class="small text-muted">Đã dùng {{ storage.disk_used_h }}</div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="text-muted small">Còn trống</div>
+        <div class="fs-5 fw-semibold text-{{ color }}">{{ storage.disk_free_h }}</div>
+      </div>
+      <div class="col-md-3 col-12">
+        <div class="text-muted small mb-1">Disk đã dùng</div>
+        <div class="progress" style="height:18px;">
+          <div class="progress-bar bg-{{ color }}" role="progressbar"
+               style="width: {{ storage.disk_used_pct }}%"
+               aria-valuenow="{{ storage.disk_used_pct }}" aria-valuemin="0" aria-valuemax="100">
+            {{ storage.disk_used_pct }}%
+          </div>
+        </div>
+        {% if storage.level == "danger" %}
+        <div class="small text-danger mt-1">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>Disk gần đầy — cần xử lý log/retention.
+        </div>
+        {% elif storage.level == "warning" %}
+        <div class="small text-warning mt-1">
+          <i class="bi bi-exclamation-triangle me-1"></i>Disk đang cao — theo dõi sát.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="small text-muted mt-2">
+      <i class="bi bi-info-circle me-1"></i>Disk của host nơi đặt volume database (pgdata).
+    </div>
+  </div>
+</div>
