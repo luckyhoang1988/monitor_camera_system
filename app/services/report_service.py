@@ -33,6 +33,12 @@ class NVRUptimeRow:
     total_checks: int
     online_checks: int
     uptime_pct: float
+    current_status: str | None = None
+
+    @property
+    def recovered(self) -> bool:
+        """Đang Online trở lại sau khi từng có downtime trong kỳ (uptime < 100%)."""
+        return self.current_status == NVRStatus.ONLINE.value and self.uptime_pct < 100
 
 
 @dataclass
@@ -44,6 +50,12 @@ class CameraDowntimeRow:
     offline_checks: int
     total_checks: int
     uptime_pct: float
+    current_status: str | None = None
+
+    @property
+    def recovered(self) -> bool:
+        """Đang Online trở lại (từng offline trong kỳ — nằm trong danh sách này)."""
+        return self.current_status == CameraStatus.ONLINE.value
 
 
 @dataclass
@@ -70,6 +82,7 @@ async def nvr_uptime_rows(
             NVRDevice.area,
             func.count(NVRStatusLog.id),
             online_expr,
+            NVRDevice.current_status,
         )
         .select_from(NVRDevice)
         .outerjoin(
@@ -77,7 +90,9 @@ async def nvr_uptime_rows(
             (NVRStatusLog.nvr_id == NVRDevice.id)
             & (NVRStatusLog.checked_at >= cutoff),
         )
-        .group_by(NVRDevice.id, NVRDevice.name, NVRDevice.area)
+        .group_by(
+            NVRDevice.id, NVRDevice.name, NVRDevice.area, NVRDevice.current_status
+        )
         .order_by(NVRDevice.name)
     )
     if area:
@@ -90,8 +105,11 @@ async def nvr_uptime_rows(
             total_checks=int(total or 0),
             online_checks=int(online or 0),
             uptime_pct=_pct(int(online or 0), int(total or 0)),
+            current_status=cur_status,
         )
-        for nid, name, area, total, online in (await session.execute(stmt)).all()
+        for nid, name, area, total, online, cur_status in (
+            await session.execute(stmt)
+        ).all()
     ]
     rows.sort(key=lambda r: (r.uptime_pct, -r.total_checks))
     return rows
@@ -117,13 +135,15 @@ async def worst_cameras(
             func.count(CameraStatusLog.id),
             offline_expr,
             online_expr,
+            CameraChannel.current_status,
         )
         .select_from(CameraStatusLog)
         .join(CameraChannel, CameraStatusLog.camera_id == CameraChannel.id)
         .join(NVRDevice, CameraChannel.nvr_id == NVRDevice.id)
         .where(CameraStatusLog.checked_at >= cutoff)
         .group_by(
-            CameraChannel.id, NVRDevice.name, CameraChannel.channel_no, CameraChannel.name
+            CameraChannel.id, NVRDevice.name, CameraChannel.channel_no,
+            CameraChannel.name, CameraChannel.current_status,
         )
         .having(offline_expr > 0)
         .order_by(offline_expr.desc())
@@ -140,8 +160,9 @@ async def worst_cameras(
             offline_checks=int(offline or 0),
             total_checks=int(total or 0),
             uptime_pct=_pct(int(online or 0), int(total or 0)),
+            current_status=cur_status,
         )
-        for cid, nvr_name, ch_no, cam_name, total, offline, online in (
+        for cid, nvr_name, ch_no, cam_name, total, offline, online, cur_status in (
             await session.execute(stmt)
         ).all()
     ]

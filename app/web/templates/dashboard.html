@@ -24,9 +24,9 @@
     </div></div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card stat-card text-bg-danger h-100"><div class="card-body d-flex align-items-center justify-content-between">
+    <div class="card stat-card text-bg-danger h-100 {{ 'alert-glow' if overview.nvr_offline else '' }}"><div class="card-body d-flex align-items-center justify-content-between">
       <div><h6 class="card-title mb-1 opacity-75">NVR Offline</h6><p class="display-6 fw-bold mb-0">{{ overview.nvr_offline }}</p></div>
-      <i class="bi bi-x-circle-fill fs-1 opacity-50"></i>
+      <i class="bi bi-x-circle-fill fs-1 opacity-50 {{ 'blink' if overview.nvr_offline else '' }}"></i>
     </div></div>
   </div>
   <div class="col-6 col-md-3">
@@ -52,9 +52,9 @@
     </div></div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card stat-card border-start border-danger border-4 h-100"><div class="card-body d-flex align-items-center justify-content-between">
+    <div class="card stat-card border-start border-danger border-4 h-100 {{ 'alert-glow' if overview.camera_offline else '' }}"><div class="card-body d-flex align-items-center justify-content-between">
       <div><h6 class="card-title text-danger mb-1">Camera Offline</h6><p class="display-6 fw-bold mb-0">{{ overview.camera_offline }}</p></div>
-      <i class="bi bi-camera-video-off-fill fs-1 text-danger opacity-50"></i>
+      <i class="bi bi-camera-video-off-fill fs-1 text-danger opacity-50 {{ 'blink' if overview.camera_offline else '' }}"></i>
     </div></div>
   </div>
   <div class="col-6 col-md-3">
@@ -95,7 +95,7 @@
           <td>{{ row.camera.channel_no }}</td>
           <td>{{ row.camera.name or "—" }}</td>
           <td>{{ row.camera.camera_ip or "—" }}</td>
-          <td><span class="badge text-bg-{{ row.camera.current_status | badge }}">{{ row.camera.current_status }}</span></td>
+          <td><span class="badge text-bg-{{ row.camera.current_status | badge }} blink">{{ row.camera.current_status }}</span></td>
           <td>{% if row.camera.offline_since %}{{ row.camera.offline_since | localtime }}{% else %}—{% endif %}</td>
           <td>{{ row.camera.last_checked_at | localtime }}</td>
           <td>

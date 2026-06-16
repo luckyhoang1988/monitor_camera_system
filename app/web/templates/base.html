@@ -18,6 +18,22 @@
     .card { border: none; border-radius: .85rem; box-shadow: 0 .125rem .4rem rgba(18,38,63,.06); }
     .stat-card { transition: transform .15s ease, box-shadow .15s ease; }
     .stat-card:hover { transform: translateY(-3px); box-shadow: 0 .5rem 1.4rem rgba(18,38,63,.16); }
+
+    /* Nhấp nháy cảnh báo khi có thiết bị mất kết nối (trang Tổng quan) */
+    @keyframes alert-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(220,53,69,.65); }
+      50%      { box-shadow: 0 0 0 .65rem rgba(220,53,69,0); }
+    }
+    .alert-glow { animation: alert-glow 1.3s ease-in-out infinite; }
+    @keyframes blink-fade { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+    .blink { animation: blink-fade 1.1s ease-in-out infinite; }
+
+    /* Dòng "Online trở lại" trên trang Báo cáo — nổi bật bằng nền xanh + viền */
+    .row-recovered { background-color: #d1f7e0 !important; box-shadow: inset .25rem 0 0 #198754; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .alert-glow, .blink { animation: none; }
+    }
   </style>
 </head>
 <body>

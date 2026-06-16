@@ -55,8 +55,13 @@
     </tr></thead>
     <tbody>
       {% for r in report.nvr_rows %}
-      <tr>
-        <td><a href="/nvrs/{{ r.nvr_id }}">{{ r.name }}</a></td>
+      <tr {{ 'class="row-recovered"' if r.recovered }}>
+        <td>
+          <a href="/nvrs/{{ r.nvr_id }}">{{ r.name }}</a>
+          {% if r.recovered %}
+          <span class="badge text-bg-success ms-1"><i class="bi bi-arrow-clockwise me-1"></i>Online trở lại</span>
+          {% endif %}
+        </td>
         <td>{{ r.area or "—" }}</td>
         <td>{{ r.total_checks }}</td>
         <td>{{ r.online_checks }}</td>
@@ -86,10 +91,15 @@
     </tr></thead>
     <tbody>
       {% for c in report.worst_cameras %}
-      <tr>
+      <tr {{ 'class="row-recovered"' if c.recovered }}>
         <td>{{ c.nvr_name }}</td>
         <td>{{ c.channel_no }}</td>
-        <td>{{ c.name or "—" }}</td>
+        <td>
+          {{ c.name or "—" }}
+          {% if c.recovered %}
+          <span class="badge text-bg-success ms-1"><i class="bi bi-arrow-clockwise me-1"></i>Online trở lại</span>
+          {% endif %}
+        </td>
         <td><span class="badge text-bg-danger">{{ c.offline_checks }}</span></td>
         <td>{{ c.total_checks }}</td>
         <td>{{ c.uptime_pct }}%</td>
