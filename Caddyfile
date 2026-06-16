@@ -1,18 +1,22 @@
 # Caddy reverse proxy — TLS termination cho Chek_NVR trên LAN.
 # Cert do CA nội bộ cấp (xem scripts/gen_certs.sh); KHÔNG dùng ACME/Let's Encrypt
 # vì chạy theo IP nội bộ, không có domain public.
+#
+# Dùng site catch-all (:80/:443) thay vì khóa theo IP: client kết nối bằng IP
+# KHÔNG gửi SNI, nên phải để cert làm mặc định cho mọi kết nối (nếu khóa theo host
+# IP, Caddy không khớp được cert -> handshake lỗi "tls internal error").
 {
 	auto_https off
 	admin off
 }
 
-# HTTP 80 -> chuyển hướng sang HTTPS.
-http://10.0.193.233:80 {
-	redir https://10.0.193.233{uri} permanent
+# HTTP 80 -> chuyển hướng HTTPS (theo host client gửi, hợp cả IP).
+:80 {
+	redir https://{host}{uri} permanent
 }
 
 # HTTPS 443 -> proxy về app (chỉ Caddy nói chuyện với app trong mạng compose).
-https://10.0.193.233:443 {
+:443 {
 	tls /etc/caddy/certs/server.crt /etc/caddy/certs/server.key
 	reverse_proxy app:8080
 }
