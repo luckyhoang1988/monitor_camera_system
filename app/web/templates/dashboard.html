@@ -8,7 +8,7 @@
   </div>
   <div class="d-flex gap-2">
     <button id="toggle-blink" type="button" class="btn btn-outline-secondary">
-      <i class="bi bi-bell-slash me-1"></i><span>Tắt nhấp nháy</span>
+      <i class="bi bi-bell-slash me-1"></i><span>Tắt cảnh báo động</span>
     </button>
     <a href="/nvrs" class="btn btn-primary"><i class="bi bi-hdd-stack me-1"></i>Danh sách NVR</a>
   </div>
@@ -30,7 +30,7 @@
     function apply(muted) {
       body.classList.toggle('alerts-muted', muted);
       icon.className = 'bi me-1 ' + (muted ? 'bi-bell' : 'bi-bell-slash');
-      label.textContent = muted ? 'Bật nhấp nháy' : 'Tắt nhấp nháy';
+      label.textContent = muted ? 'Bật cảnh báo động' : 'Tắt cảnh báo động';
     }
 
     apply(localStorage.getItem(KEY) === '1');
