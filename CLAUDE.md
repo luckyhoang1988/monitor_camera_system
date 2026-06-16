@@ -165,6 +165,9 @@ Lưu ý:
 ## 9. Dashboard (Jinja2 + HTMX)
 
 - **Tổng quan:** tổng NVR, online/offline/warning, tổng camera, online/offline, tỷ lệ uptime toàn hệ thống.
+  - Tự làm mới mỗi 30s qua HTMX polling (`#dashboard-body` swap `innerHTML`).
+  - Khi có NVR/camera offline: hiệu ứng cảnh báo động — card glow (`.alert-glow`) + icon/badge nhấp nháy (`.blink`), CSS định nghĩa trong `base.html`.
+  - Nút **"Tắt/Bật cảnh báo động"** (id `toggle-blink`, đặt NGOÀI `#dashboard-body` để không bị swap): toggle class `.alerts-muted` trên `#dashboard-body` (phần tử tồn tại xuyên suốt polling) → CSS tắt animation cho con; lưu lựa chọn vào `localStorage['nvr_alerts_muted']`.
 - **Danh sách NVR:** tên, IP, vị trí, trạng thái, số camera online/offline, lần kiểm tra cuối, lỗi. Lọc theo khu vực/trạng thái.
 - **Chi tiết NVR:** thông tin thiết bị (model/serial/firmware/uptime), danh sách camera + trạng thái, lịch sử lỗi gần đây.
 - **Cảnh báo:** danh sách alert, auto-refresh qua HTMX polling.
