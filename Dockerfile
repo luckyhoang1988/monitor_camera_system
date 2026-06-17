@@ -9,6 +9,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# iputils-ping: phục hồi lớp kiểm tra ICMP (ping/port/API). Gói Debian đặt sẵn
+# cap_net_raw+ep trên binary nên chạy được dưới user non-root trong Docker.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends iputils-ping \
+    && rm -rf /var/lib/apt/lists/*
+
 # Cài dependency trước (tận dụng cache layer khi chỉ đổi code).
 COPY requirements.txt ./
 RUN pip install -r requirements.txt

@@ -114,6 +114,7 @@ Chek_NVR/
 - HTTP 401 → **Auth Error**.
 - Ping/port OK nhưng API lỗi/timeout/chậm → **Warning**.
 - Không ping được, không mở port, không gọi được API → **Network Error / Offline** (sau N lần xác nhận).
+- **Warning kéo dài N lần liên tiếp** (port mở nhưng API lỗi/timeout — gồm case **NAT half-open**: router còn mở cổng dù đầu ghi đã chết) cũng **leo thang thành Offline** + sinh alert. Quan trọng với NVR qua IP public sau port-forward.
 
 ### Camera
 - Gọi `/channels` (danh sách) + `/channels/status` (trạng thái) → parse XML → map về trạng thái chuẩn hóa.

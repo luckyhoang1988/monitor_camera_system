@@ -27,6 +27,20 @@ def test_network_error_offline_at_threshold():
     assert status == NVRStatus.OFFLINE and count == 3
 
 
+def test_warning_warns_before_threshold():
+    # Warning kéo dài (port mở, API lỗi/timeout) cũng đếm như lỗi kết nối.
+    status, count = apply_state_machine(NVRStatus.WARNING, prev_fail_count=0, fail_threshold=THRESHOLD)
+    assert status == NVRStatus.WARNING and count == 1
+    status, count = apply_state_machine(NVRStatus.WARNING, prev_fail_count=1, fail_threshold=THRESHOLD)
+    assert status == NVRStatus.WARNING and count == 2
+
+
+def test_warning_offline_at_threshold():
+    # Bắt case NAT half-open: Warning liên tục đạt ngưỡng -> chốt Offline.
+    status, count = apply_state_machine(NVRStatus.WARNING, prev_fail_count=2, fail_threshold=THRESHOLD)
+    assert status == NVRStatus.OFFLINE and count == 3
+
+
 def test_auth_error_is_immediate_no_counter():
     status, count = apply_state_machine(NVRStatus.AUTH_ERROR, prev_fail_count=5, fail_threshold=THRESHOLD)
     assert status == NVRStatus.AUTH_ERROR and count == 0

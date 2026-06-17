@@ -207,8 +207,10 @@ async def fetch_nvr_channels(
 
 # --- State machine chống flapping (hàm thuần, dễ test) ---
 
-# Các trạng thái coi là "thất bại kết nối" cần qua bộ đếm trước khi chốt Offline.
-_FAILURE_STATES = {NVRStatus.NETWORK_ERROR}
+# Các trạng thái coi là "thất bại" cần qua bộ đếm trước khi chốt Offline.
+# WARNING gộp vào đây để bắt case NAT half-open (port mở nhưng API lỗi/timeout
+# liên tục): NVR public sau port-forward có thể vẫn mở cổng TCP dù đã chết.
+_FAILURE_STATES = {NVRStatus.NETWORK_ERROR, NVRStatus.WARNING}
 
 
 def apply_state_machine(
