@@ -51,7 +51,14 @@ def build_report_xlsx(report: UptimeReport, *, area: str | None = None) -> bytes
     ws = wb.active
     ws.title = "Uptime NVR"
     scope = f"Khu vực: {area}" if area else "Tất cả khu vực"
-    ws["A1"] = f"Báo cáo uptime — {report.days} ngày gần nhất · {scope}"
+    if report.is_custom_range:
+        tz = ZoneInfo(get_settings().timezone)
+        d_from = report.start.astimezone(tz).strftime("%d/%m/%Y") if report.start else "—"
+        d_to = report.end.astimezone(tz).strftime("%d/%m/%Y") if report.end else "—"
+        period = f"từ {d_from} đến {d_to}"
+    else:
+        period = f"{report.days} ngày gần nhất"
+    ws["A1"] = f"Báo cáo uptime — {period} · {scope}"
     ws["A1"].font = _TITLE_FONT
     ws["A2"] = (
         f"Xuất lúc: {datetime.now().strftime('%d/%m/%Y %H:%M')}  ·  "

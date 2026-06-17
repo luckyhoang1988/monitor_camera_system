@@ -1,18 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Báo cáo uptime — Check_NVR{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+{% set custom_range = from_date and to_date %}
+{% set area_qs = '&area=' ~ (sel_area | urlencode) if sel_area else '' %}
+{% set range_qs = '&from_date=' ~ from_date ~ '&to_date=' ~ to_date if custom_range else '' %}
+{% set period_label = ('từ ' ~ from_date ~ ' đến ' ~ to_date) if custom_range else ('trong ' ~ days ~ ' ngày') %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <h3 class="mb-0">Báo cáo uptime</h3>
   <div class="d-flex align-items-center gap-2 flex-wrap">
     <div class="btn-group" role="group" aria-label="Khoảng thời gian">
       {% for d, label in [(1, "24 giờ"), (7, "7 ngày"), (30, "30 ngày"), (90, "90 ngày")] %}
-      <a href="/reports?days={{ d }}{% if sel_area %}&area={{ sel_area | urlencode }}{% endif %}"
-         class="btn btn-sm {{ 'btn-primary' if days == d else 'btn-outline-primary' }}">{{ label }}</a>
+      <a href="/reports?days={{ d }}{{ area_qs }}"
+         class="btn btn-sm {{ 'btn-primary' if days == d and not custom_range else 'btn-outline-primary' }}">{{ label }}</a>
       {% endfor %}
     </div>
 
     <form method="get" action="/reports" class="d-flex align-items-center gap-2 mb-0">
       <input type="hidden" name="days" value="{{ days }}">
+      {% if custom_range %}
+      <input type="hidden" name="from_date" value="{{ from_date }}">
+      <input type="hidden" name="to_date" value="{{ to_date }}">
+      {% endif %}
       <select name="area" class="form-select form-select-sm" style="width:auto"
               onchange="this.form.submit()">
         <option value="">Tất cả khu vực</option>
@@ -22,26 +30,57 @@
       </select>
     </form>
 
-    <a href="/reports/export?days={{ days }}{% if sel_area %}&area={{ sel_area | urlencode }}{% endif %}"
+    <a href="/reports/export?days={{ days }}{{ area_qs }}{{ range_qs }}"
        class="btn btn-sm btn-success">
       <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel
     </a>
   </div>
 </div>
 
+<div class="card mb-4"><div class="card-body py-2">
+  <form method="get" action="/reports"
+        class="d-flex align-items-end gap-2 flex-wrap mb-0">
+    {% if sel_area %}<input type="hidden" name="area" value="{{ sel_area }}">{% endif %}
+    <div>
+      <label class="form-label form-label-sm mb-1 text-muted small">Từ ngày</label>
+      <input type="date" name="from_date" value="{{ from_date }}"
+             class="form-control form-control-sm" style="width:auto"
+             max="{{ to_date or '' }}">
+    </div>
+    <div>
+      <label class="form-label form-label-sm mb-1 text-muted small">Đến ngày</label>
+      <input type="date" name="to_date" value="{{ to_date }}"
+             class="form-control form-control-sm" style="width:auto"
+             min="{{ from_date or '' }}">
+    </div>
+    <button type="submit" class="btn btn-sm btn-primary">
+      <i class="bi bi-funnel me-1"></i>Áp dụng
+    </button>
+    {% if custom_range %}
+    <a href="/reports?days={{ days }}{{ area_qs }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-x-lg me-1"></i>Bỏ lọc ngày
+    </a>
+    <a href="/reports/export?days={{ days }}{{ area_qs }}{{ range_qs }}"
+       class="btn btn-sm btn-success ms-auto">
+      <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel khoảng này
+    </a>
+    {% endif %}
+  </form>
+</div></div>
+
 <div class="row g-3 mb-4">
   <div class="col-md-6">
     <div class="card border-primary"><div class="card-body">
       <h6 class="card-title text-primary">Uptime NVR (toàn hệ thống)</h6>
       <p class="display-6 mb-0">{{ report.system_nvr_uptime }}%</p>
-      <small class="text-muted">% lần kiểm tra NVR ở trạng thái Online trong {{ days }} ngày</small>
+      <small class="text-muted">% lần kiểm tra NVR ở trạng thái Online {{ period_label }}</small>
     </div></div>
   </div>
   <div class="col-md-6">
     <div class="card border-info"><div class="card-body">
       <h6 class="card-title text-info">Uptime Camera (toàn hệ thống)</h6>
       <p class="display-6 mb-0">{{ report.system_camera_uptime }}%</p>
-      <small class="text-muted">% lần kiểm tra camera ở trạng thái Online trong {{ days }} ngày</small>
+      <small class="text-muted">% lần kiểm tra camera ở trạng thái Online {{ period_label }}</small>
     </div></div>
   </div>
 </div>

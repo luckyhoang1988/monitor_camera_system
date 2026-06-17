@@ -349,21 +349,55 @@ def _valid_days(days: int) -> int:
     return days if days in (1, 7, 30, 90) else 7
 
 
+def _parse_report_range(
+    from_date: str | None, to_date: str | None
+) -> tuple[datetime | None, datetime | None]:
+    """Đổi từ ngày/tới ngày (giờ local) sang khoảng (start, end) UTC.
+
+    Bao trùm trọn ngày: đầu ngày `from_date` → cuối ngày `to_date`. Chỉ trả về
+    khoảng khi cả hai ngày hợp lệ và start <= end; ngược lại trả (None, None) để
+    rơi về cửa sổ tương đối `days`.
+    """
+    if not from_date or not to_date:
+        return None, None
+    tz = ZoneInfo(get_settings().timezone)
+    try:
+        start_d = datetime.strptime(from_date, "%Y-%m-%d").date()
+        end_d = datetime.strptime(to_date, "%Y-%m-%d").date()
+    except ValueError:
+        return None, None
+    if start_d > end_d:
+        return None, None
+    start = datetime.combine(start_d, time.min, tzinfo=tz).astimezone(timezone.utc)
+    end = datetime.combine(end_d, time.max, tzinfo=tz).astimezone(timezone.utc)
+    return start, end
+
+
 @router.get("/reports", response_class=HTMLResponse)
 async def reports(
     request: Request,
     days: int = 7,
     area: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
     days = _valid_days(days)
     area = area or None
-    report = await build_uptime_report(session, days, area=area)
+    start, end = _parse_report_range(from_date, to_date)
+    report = await build_uptime_report(session, days, area=area, start=start, end=end)
     areas = [a for (a,) in (await session.execute(get_distinct_areas_stmt())).all()]
     return templates.TemplateResponse(
         request,
         "reports.html",
-        {"report": report, "days": days, "areas": areas, "sel_area": area},
+        {
+            "report": report,
+            "days": days,
+            "areas": areas,
+            "sel_area": area,
+            "from_date": from_date if start else "",
+            "to_date": to_date if end else "",
+        },
     )
 
 
@@ -371,16 +405,25 @@ async def reports(
 async def reports_export(
     days: int = 7,
     area: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
     """Xuất báo cáo uptime ra Excel (.xlsx) theo bộ lọc hiện tại."""
     days = _valid_days(days)
     area = area or None
-    report = await build_uptime_report(session, days, area=area, worst_limit=1000)
+    start, end = _parse_report_range(from_date, to_date)
+    report = await build_uptime_report(
+        session, days, area=area, worst_limit=1000, start=start, end=end
+    )
     content = build_report_xlsx(report, area=area)
     suffix = f"_{area}" if area else ""
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
-    filename = f"bao_cao_uptime_{days}ngay{suffix}_{stamp}.xlsx"
+    if start and end:
+        period = f"{from_date}_den_{to_date}"
+    else:
+        period = f"{days}ngay"
+    filename = f"bao_cao_uptime_{period}{suffix}_{stamp}.xlsx"
     return Response(
         content=content,
         media_type=(
