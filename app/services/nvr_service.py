@@ -83,9 +83,13 @@ async def check_nvr_now(session: AsyncSession, nvr_id: int) -> bool:
     await process_nvr_alerts(session, outcome, nvr_name)
     # Khi NVR Online thì quét luôn camera để nút "Kiểm tra ngay" phản ánh đầy đủ.
     if outcome.new_status == NVRStatus.ONLINE:
-        offline = await update_nvr_cameras(
+        cam_outcome = await update_nvr_cameras(
             session, nvr, timeout=settings.request_timeout
         )
-        await process_camera_alerts(session, nvr_id, nvr_name, offline)
+        # Fetch camera lỗi (ok=False) -> giữ nguyên alert, không resolve nhầm.
+        if cam_outcome.ok:
+            await process_camera_alerts(
+                session, nvr_id, nvr_name, cam_outcome.alertable_offline
+            )
     await session.commit()
     return True

@@ -32,3 +32,4 @@ cryptography==49.0.0
 # Test
 pytest==9.1.0
 pytest-asyncio==1.4.0
+aiosqlite==0.20.0  # DB in-memory cho integration test (không cần Postgres)

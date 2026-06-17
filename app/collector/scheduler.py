@@ -68,10 +68,15 @@ async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                 return
             try:
                 nvr_name = nvr.name
-                offline = await update_nvr_cameras(
+                outcome = await update_nvr_cameras(
                     session, nvr, timeout=settings.request_timeout
                 )
-                await process_camera_alerts(session, nvr_id, nvr_name, offline)
+                # Chỉ đụng alert khi có dữ liệu camera tin cậy. Fetch lỗi (ok=False)
+                # -> giữ nguyên alert/offline_since để tránh resolve nhầm khi timeout.
+                if outcome.ok:
+                    await process_camera_alerts(
+                        session, nvr_id, nvr_name, outcome.alertable_offline
+                    )
                 await session.commit()
             except Exception:  # noqa: BLE001 - 1 NVR lỗi không được dừng cả batch
                 await session.rollback()

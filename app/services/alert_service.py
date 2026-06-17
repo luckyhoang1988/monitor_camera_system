@@ -10,6 +10,7 @@ Bản đầu chỉ ghi alert vào DB để hiển thị trên dashboard; các k�
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import select, update
@@ -19,6 +20,8 @@ from app.config import get_settings
 from app.db.models import Alert
 from app.enums import AlertSeverity, AlertStatus, AlertType, NVRStatus
 from app.services.status_service import NVRHealthOutcome
+
+logger = logging.getLogger("chek_nvr.alert")
 
 # Trạng thái coi là "đang lỗi" của NVR.
 _DOWN_STATES = {NVRStatus.OFFLINE, NVRStatus.NETWORK_ERROR, NVRStatus.AUTH_ERROR}
@@ -40,7 +43,7 @@ async def _has_open_alert(
 async def _resolve_open_alerts(
     session: AsyncSession, nvr_id: int, alert_type: AlertType
 ) -> None:
-    await session.execute(
+    result = await session.execute(
         update(Alert)
         .where(
             Alert.nvr_id == nvr_id,
@@ -52,6 +55,13 @@ async def _resolve_open_alerts(
             resolved_at=datetime.now(timezone.utc),
         )
     )
+    if result.rowcount:
+        logger.info(
+            "Resolve %d alert %s cho NVR %s (đã hồi phục)",
+            result.rowcount,
+            alert_type.value,
+            nvr_id,
+        )
 
 
 async def _create_alert(
@@ -64,6 +74,13 @@ async def _create_alert(
 ) -> None:
     if await _has_open_alert(session, nvr_id, alert_type):
         return
+    logger.info(
+        "Tạo alert %s (%s) cho NVR %s: %s",
+        alert_type.value,
+        severity.value,
+        nvr_id,
+        message,
+    )
     session.add(
         Alert(
             type=alert_type.value,
