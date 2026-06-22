@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timezone
+from math import ceil
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -380,12 +381,34 @@ async def reports(
     area: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    cam_from_date: str | None = None,
+    cam_to_date: str | None = None,
+    cam_page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
     days = _valid_days(days)
     area = area or None
     start, end = _parse_report_range(from_date, to_date)
-    report = await build_uptime_report(session, days, area=area, start=start, end=end)
+    cam_start, cam_end = _parse_report_range(cam_from_date, cam_to_date)
+    report = await build_uptime_report(
+        session,
+        days,
+        area=area,
+        start=start,
+        end=end,
+        camera_recovery_start=cam_start,
+        camera_recovery_end=cam_end,
+    )
+    # Phân trang riêng cho bảng "Lịch sử camera online trở lại".
+    cam_page_size = 20
+    cam_total_rows = len(report.camera_recoveries)
+    cam_total_pages = max(1, ceil(cam_total_rows / cam_page_size))
+    cam_page = min(max(cam_page, 1), cam_total_pages)
+    cam_offset = (cam_page - 1) * cam_page_size
+    report.camera_recoveries = report.camera_recoveries[
+        cam_offset: cam_offset + cam_page_size
+    ]
+
     areas = [a for (a,) in (await session.execute(get_distinct_areas_stmt())).all()]
     return templates.TemplateResponse(
         request,
@@ -397,6 +420,12 @@ async def reports(
             "sel_area": area,
             "from_date": from_date if start else "",
             "to_date": to_date if end else "",
+            "cam_from_date": cam_from_date if cam_start else "",
+            "cam_to_date": cam_to_date if cam_end else "",
+            "cam_page": cam_page,
+            "cam_total_pages": cam_total_pages,
+            "cam_total_rows": cam_total_rows,
+            "cam_page_size": cam_page_size,
         },
     )
 
@@ -407,14 +436,24 @@ async def reports_export(
     area: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    cam_from_date: str | None = None,
+    cam_to_date: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
     """Xuất báo cáo uptime ra Excel (.xlsx) theo bộ lọc hiện tại."""
     days = _valid_days(days)
     area = area or None
     start, end = _parse_report_range(from_date, to_date)
+    cam_start, cam_end = _parse_report_range(cam_from_date, cam_to_date)
     report = await build_uptime_report(
-        session, days, area=area, worst_limit=1000, start=start, end=end
+        session,
+        days,
+        area=area,
+        worst_limit=1000,
+        start=start,
+        end=end,
+        camera_recovery_start=cam_start,
+        camera_recovery_end=cam_end,
     )
     content = build_report_xlsx(report, area=area)
     suffix = f"_{area}" if area else ""

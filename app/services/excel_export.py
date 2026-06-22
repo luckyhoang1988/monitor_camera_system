@@ -99,6 +99,49 @@ def build_report_xlsx(report: UptimeReport, *, area: str | None = None) -> bytes
     _autosize(ws2, [34, 8, 28, 16, 16, 12])
     ws2.freeze_panes = "A2"
 
+    # --- Sheet 3: Nhật ký NVR online trở lại ---
+    ws3 = wb.create_sheet("NVR online tro lai")
+    headers3 = ["Thời điểm online lại", "NVR", "Khu vực", "Trạng thái trước"]
+    ws3.append(headers3)
+    _style_header(ws3, 1, len(headers3))
+    for e in report.nvr_recoveries:
+        ws3.append(
+            [
+                _localtime(e.recovered_at),
+                e.name,
+                e.area or "—",
+                e.from_status or "—",
+            ]
+        )
+    _autosize(ws3, [22, 34, 16, 18])
+    ws3.freeze_panes = "A2"
+
+    # --- Sheet 4: Nhật ký camera online trở lại ---
+    ws4 = wb.create_sheet("Camera online tro lai")
+    headers4 = [
+        "Thời điểm online lại",
+        "NVR",
+        "Khu vực",
+        "Kênh",
+        "Tên camera",
+        "Trạng thái trước",
+    ]
+    ws4.append(headers4)
+    _style_header(ws4, 1, len(headers4))
+    for e in report.camera_recoveries:
+        ws4.append(
+            [
+                _localtime(e.recovered_at),
+                e.nvr_name,
+                e.area or "—",
+                e.channel_no,
+                e.name or "—",
+                e.from_status or "—",
+            ]
+        )
+    _autosize(ws4, [22, 30, 16, 8, 28, 18])
+    ws4.freeze_panes = "A2"
+
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()

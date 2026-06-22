@@ -2,8 +2,11 @@
 {% block title %}Báo cáo uptime — Check_NVR{% endblock %}
 {% block content %}
 {% set custom_range = from_date and to_date %}
+{% set cam_custom_range = cam_from_date and cam_to_date %}
 {% set area_qs = '&area=' ~ (sel_area | urlencode) if sel_area else '' %}
 {% set range_qs = '&from_date=' ~ from_date ~ '&to_date=' ~ to_date if custom_range else '' %}
+{% set cam_range_qs = '&cam_from_date=' ~ cam_from_date ~ '&cam_to_date=' ~ cam_to_date if cam_custom_range else '' %}
+{% set cam_page_qs = '&cam_page=' ~ cam_page if cam_page and cam_page > 1 else '' %}
 {% set period_label = ('từ ' ~ from_date ~ ' đến ' ~ to_date) if custom_range else ('trong ' ~ days ~ ' ngày') %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <h3 class="mb-0">Báo cáo uptime</h3>
@@ -30,7 +33,7 @@
       </select>
     </form>
 
-    <a href="/reports/export?days={{ days }}{{ area_qs }}{{ range_qs }}"
+    <a href="/reports/export?days={{ days }}{{ area_qs }}{{ range_qs }}{{ cam_range_qs }}"
        class="btn btn-sm btn-success">
       <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel
     </a>
@@ -60,7 +63,7 @@
     <a href="/reports?days={{ days }}{{ area_qs }}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-x-lg me-1"></i>Bỏ lọc ngày
     </a>
-    <a href="/reports/export?days={{ days }}{{ area_qs }}{{ range_qs }}"
+    <a href="/reports/export?days={{ days }}{{ area_qs }}{{ range_qs }}{{ cam_range_qs }}"
        class="btn btn-sm btn-success ms-auto">
       <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel khoảng này
     </a>
@@ -149,4 +152,122 @@
     </tbody>
   </table>
 </div></div>
+
+<div class="card mt-3">
+  <div class="card-body">
+    <h6 class="card-title">Lịch sử NVR online trở lại</h6>
+    <table class="table table-sm table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Thời điểm</th>
+          <th>NVR</th>
+          <th>Khu vực</th>
+          <th>Trạng thái trước</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in report.nvr_recoveries %}
+        <tr>
+          <td>{{ e.recovered_at | localtime }}</td>
+          <td><a href="/nvrs/{{ e.nvr_id }}">{{ e.name }}</a></td>
+          <td>{{ e.area or "—" }}</td>
+          <td><span class="badge text-bg-warning">{{ e.from_status or "—" }}</span></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="text-center text-muted py-3">
+            Không có lần NVR online trở lại trong khoảng này.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-2">
+      <h6 class="card-title mb-0">Lịch sử camera online trở lại</h6>
+      <form method="get" action="/reports" class="d-flex align-items-end gap-2 flex-wrap mb-0">
+        <input type="hidden" name="days" value="{{ days }}">
+            <input type="hidden" name="cam_page" value="1">
+        {% if sel_area %}<input type="hidden" name="area" value="{{ sel_area }}">{% endif %}
+        {% if custom_range %}
+        <input type="hidden" name="from_date" value="{{ from_date }}">
+        <input type="hidden" name="to_date" value="{{ to_date }}">
+        {% endif %}
+        <div>
+          <label class="form-label form-label-sm mb-1 text-muted small">Từ ngày</label>
+          <input type="date" name="cam_from_date" value="{{ cam_from_date }}"
+                 class="form-control form-control-sm" style="width:auto"
+                 max="{{ cam_to_date or '' }}">
+        </div>
+        <div>
+          <label class="form-label form-label-sm mb-1 text-muted small">Đến ngày</label>
+          <input type="date" name="cam_to_date" value="{{ cam_to_date }}"
+                 class="form-control form-control-sm" style="width:auto"
+                 min="{{ cam_from_date or '' }}">
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">
+          <i class="bi bi-funnel me-1"></i>Lọc
+        </button>
+        {% if cam_custom_range %}
+        <a href="/reports?days={{ days }}{{ area_qs }}{{ range_qs }}"
+           class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-x-lg me-1"></i>Bỏ lọc camera
+        </a>
+        {% endif %}
+      </form>
+    </div>
+    <table class="table table-sm table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Thời điểm</th>
+          <th>NVR</th>
+          <th>Kênh</th>
+          <th>Tên camera</th>
+          <th>Trạng thái trước</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in report.camera_recoveries %}
+        <tr>
+          <td>{{ e.recovered_at | localtime }}</td>
+          <td>{{ e.nvr_name }}</td>
+          <td>{{ e.channel_no }}</td>
+          <td>{{ e.name or "—" }}</td>
+          <td><span class="badge text-bg-warning">{{ e.from_status or "—" }}</span></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-3">
+            Không có lần camera online trở lại trong khoảng này.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="d-flex justify-content-between align-items-center mt-3">
+      <small class="text-muted">
+        Hiển thị tối đa {{ cam_page_size }} dòng/trang · Tổng {{ cam_total_rows }} dòng
+      </small>
+      <div class="btn-group btn-group-sm">
+        <a class="btn btn-outline-secondary {{ 'disabled' if cam_page <= 1 else '' }}"
+           href="/reports?days={{ days }}{{ area_qs }}{{ range_qs }}{{ cam_range_qs }}&cam_page={{ cam_page - 1 }}"
+           aria-disabled="{{ 'true' if cam_page <= 1 else 'false' }}">
+          <i class="bi bi-chevron-left me-1"></i>Trang trước
+        </a>
+        <span class="btn btn-outline-secondary disabled">
+          Trang {{ cam_page }} / {{ cam_total_pages }}
+        </span>
+        <a class="btn btn-outline-secondary {{ 'disabled' if cam_page >= cam_total_pages else '' }}"
+           href="/reports?days={{ days }}{{ area_qs }}{{ range_qs }}{{ cam_range_qs }}&cam_page={{ cam_page + 1 }}"
+           aria-disabled="{{ 'true' if cam_page >= cam_total_pages else 'false' }}">
+          Trang sau<i class="bi bi-chevron-right ms-1"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
