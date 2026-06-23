@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     disk_warn_pct: int = 80  # vàng khi >= ngưỡng này
     disk_crit_pct: int = 90  # đỏ khi >= ngưỡng này
 
+    # --- Cảnh báo qua Telegram (kênh ngoài, tùy chọn) ---
+    # Bật để đẩy mỗi alert mới (offline/auth/recovery/slow/camera) lên Telegram.
+    telegram_enabled: bool = False
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""  # chat/group/channel id (group thường là số âm)
+
     # --- Retention ---
     log_retention_days: int = 90
 

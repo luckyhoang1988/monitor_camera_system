@@ -14,6 +14,7 @@ from app.services.status_service import (
     check_and_update_nvr_health,
     update_nvr_cameras,
 )
+from app.services.telegram_notifier import flush_telegram_notifications
 
 
 async def create_nvr(session: AsyncSession, data: dict) -> NVRDevice:
@@ -92,4 +93,5 @@ async def check_nvr_now(session: AsyncSession, nvr_id: int) -> bool:
                 session, nvr_id, nvr_name, cam_outcome.alertable_offline
             )
     await session.commit()
+    await flush_telegram_notifications(session)
     return True

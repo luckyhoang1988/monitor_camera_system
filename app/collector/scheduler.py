@@ -19,6 +19,7 @@ from app.db.models import NVRDevice
 from app.enums import NVRStatus
 from app.services.alert_service import process_camera_alerts, process_nvr_alerts
 from app.services.retention_service import purge_old_logs
+from app.services.telegram_notifier import flush_telegram_notifications
 from app.services.status_service import (
     check_and_update_nvr_health,
     update_nvr_cameras,
@@ -47,6 +48,7 @@ async def _health_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                 )
                 await process_nvr_alerts(session, outcome, nvr_name)
                 await session.commit()
+                await flush_telegram_notifications(session)
                 logger.info(
                     "NVR %s: %s -> %s",
                     nvr_id,
@@ -78,6 +80,7 @@ async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                         session, nvr_id, nvr_name, outcome.alertable_offline
                     )
                 await session.commit()
+                await flush_telegram_notifications(session)
             except Exception:  # noqa: BLE001 - 1 NVR lỗi không được dừng cả batch
                 await session.rollback()
                 logger.exception("Lỗi khi quét camera NVR %s", nvr_id)

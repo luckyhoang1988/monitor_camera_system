@@ -20,6 +20,7 @@ from app.config import get_settings
 from app.db.models import Alert
 from app.enums import AlertSeverity, AlertStatus, AlertType, NVRStatus
 from app.services.status_service import NVRHealthOutcome
+from app.services.telegram_notifier import queue_alert
 
 logger = logging.getLogger("chek_nvr.alert")
 
@@ -89,6 +90,8 @@ async def _create_alert(
             message=message,
         )
     )
+    # Xếp hàng đẩy lên Telegram; gửi thật sau khi commit (xem flush ở call site).
+    queue_alert(session, severity=severity.value, message=message)
 
 
 async def process_nvr_alerts(
