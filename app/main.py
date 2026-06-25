@@ -6,8 +6,9 @@ Router (api/web) sẽ được cắm vào ở bước 7-8 (xem lộ trình CLAUD
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from prometheus_client import CONTENT_TYPE_LATEST
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.auth import SESSION_COOKIE, SessionUser, verify_session_token
@@ -15,7 +16,9 @@ from app.collector.http_pool import close_all as close_http_pool
 from app.collector.scheduler import shutdown_scheduler, start_scheduler
 from app.config import get_settings
 from app.csrf import CSRF_COOKIE, issue_token, verify_csrf
+from app.db.base import AsyncSessionLocal
 from app.enums import UserRole
+from app.services.metrics_service import render_metrics
 from app.web.user_views import router as user_router
 from app.web.views import router as web_router
 from app.web.views import templates
@@ -24,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 settings = get_settings()
 
 # Đường dẫn không yêu cầu đăng nhập.
-_PUBLIC_PATHS = {"/login", "/logout", "/health", "/favicon.ico"}
+_PUBLIC_PATHS = {"/login", "/logout", "/health", "/metrics", "/favicon.ico"}
 
 
 @asynccontextmanager
@@ -104,6 +107,14 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 async def health() -> dict[str, str]:
     """Health check đơn giản."""
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Số liệu Prometheus (NVR/camera/lưu trữ/alert) — không yêu cầu đăng nhập."""
+    async with AsyncSessionLocal() as session:
+        body = await render_metrics(session)
+    return Response(content=body, media_type=CONTENT_TYPE_LATEST)
 
 
 app.include_router(web_router, dependencies=[Depends(verify_csrf)])

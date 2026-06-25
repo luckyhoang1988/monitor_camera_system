@@ -29,6 +29,9 @@ openpyxl==3.1.5
 # Mã hóa mật khẩu NVR
 cryptography==49.0.0
 
+# Metrics (endpoint /metrics cho Prometheus)
+prometheus-client==0.25.0
+
 # Test
 pytest==9.1.0
 pytest-asyncio==1.4.0
