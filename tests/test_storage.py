@@ -52,6 +52,27 @@ STORAGE_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+# NVR RAID: 1 volume ảo (RW, ghi hình) + 2 đĩa vật lý (RO) TRÙNG id với nhau/volume.
+RAID_STORAGE_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
+<storage xmlns="{NS}">
+  <hddList>
+    <hdd>
+      <id>1</id><hddName>hdd1</hddName><hddType>Virtual Disk</hddType>
+      <status>ok</status><capacity>160000</capacity><freeSpace>64000</freeSpace><property>RW</property>
+    </hdd>
+    <hdd>
+      <id>1</id><hddType>SATA</hddType>
+      <status>ok</status><capacity>13000</capacity><freeSpace>0</freeSpace><property>RO</property>
+    </hdd>
+    <hdd>
+      <id>2</id><hddType>SATA</hddType>
+      <status>ok</status><capacity>13000</capacity><freeSpace>0</freeSpace><property>RO</property>
+    </hdd>
+  </hddList>
+</storage>
+"""
+
+
 class _FakeResp:
     def __init__(self, status_code=200, text=""):
         self.status_code = status_code
@@ -186,3 +207,33 @@ def test_estimate_retention_days():
     assert estimate_retention_days(None, 64_000) is None
     assert estimate_retention_days(1000, None) is None
     assert estimate_retention_days(1000, 0) is None
+
+
+class _RaidClient:
+    """Trả XML RAID (volume ảo + đĩa vật lý trùng id), 404 cho S.M.A.R.T."""
+
+    async def get(self, path, auth=None):
+        if path == "/ISAPI/ContentMgmt/Storage":
+            return _FakeResp(text=RAID_STORAGE_XML)
+        return _FakeResp(status_code=404, text="<err/>")
+
+
+def test_raid_parsing_keeps_duplicate_ids_no_crash():
+    storage = asyncio.run(_client().get_storage_info(_RaidClient()))
+    # 1 volume ảo + 2 đĩa vật lý (id 1 trùng giữa ảo và vật lý) -> giữ đủ 3, không gộp.
+    assert len(storage.hdds) == 3
+    virtual = [h for h in storage.hdds if h.hdd_type == "Virtual Disk"]
+    physical = [h for h in storage.hdds if h.hdd_type == "SATA"]
+    assert len(virtual) == 1 and len(physical) == 2
+    assert virtual[0].is_recording is True
+    assert all(p.is_recording is False for p in physical)
+
+
+def test_raid_capacity_uses_recording_volume_only():
+    storage = asyncio.run(_client().get_storage_info(_RaidClient()))
+    ev = evaluate_storage(storage, temp_warn_c=55)
+    # Dung lượng tính theo volume ảo RW (160000), KHÔNG cộng đĩa thành viên RO.
+    assert ev.total_mb == 160000
+    assert ev.used_pct == 60.0  # (160000-64000)/160000
+    assert ev.hdd_count == 2  # đếm theo đĩa vật lý
+    assert ev.overall == StorageStatus.HEALTHY

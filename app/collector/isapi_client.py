@@ -84,6 +84,18 @@ def _find_text(elem: ET.Element, name: str) -> str | None:
     return None
 
 
+def _child_text(elem: ET.Element, name: str) -> str | None:
+    """Như _find_text nhưng CHỈ xét con trực tiếp (không đệ quy).
+
+    Cần cho <hdd>: id/capacity... phải lấy đúng của ổ đó, không lẫn id của phần tử
+    lồng bên trong (vd đĩa thành viên RAID) khiến trùng khóa.
+    """
+    for child in list(elem):
+        if local_name(child.tag) == name and child.text is not None:
+            return child.text.strip()
+    return None
+
+
 def _to_int(value: str | None) -> int | None:
     """Ép chuỗi số (có thể kèm đơn vị/khoảng trắng) về int, lỗi -> None."""
     if value is None:
@@ -111,14 +123,20 @@ class ChannelInfo:
 
 @dataclass
 class HddInfo:
-    """Trạng thái 1 ổ cứng trong NVR (từ /ISAPI/ContentMgmt/Storage)."""
+    """Trạng thái 1 ổ cứng trong NVR (từ /ISAPI/ContentMgmt/Storage).
+
+    Với NVR RAID, <hddList> gồm CẢ volume ghi ("Virtual Disk", property RW) LẪN các
+    đĩa vật lý thành viên ("SATA", property RO) — id có thể trùng nhau giữa hai loại.
+    `hdd_type` để phân biệt; dung lượng ghi chỉ tính trên volume RW (is_recording).
+    """
 
     hdd_id: int
     name: str | None = None
+    hdd_type: str | None = None  # "SATA" (vật lý) / "Virtual Disk" (volume RAID) / ...
     capacity_mb: int | None = None
     free_mb: int | None = None
     status: str | None = None  # ok / unformatted / error / sleeping / ...
-    is_recording: bool | None = None  # property có quyền ghi (R/W) -> đang ghi hình
+    is_recording: bool | None = None  # property RW -> volume đang ghi; None = không rõ
     smart_health: str | None = None  # "good"/"bad"... (chỉ một số firmware)
     temperature_c: int | None = None  # nhiệt độ °C (chỉ một số firmware)
 
@@ -258,30 +276,41 @@ class ISAPIClient:
         root = await self._get_xml(client, "/ISAPI/ContentMgmt/Storage")
 
         hdds: list[HddInfo] = []
-        for hdd in root.iter():
-            if local_name(hdd.tag) != "hdd":
+        # CHỈ lấy <hdd> là con trực tiếp của <hddList>, đọc field bằng _child_text để
+        # không lẫn id/giá trị của phần tử lồng bên trong -> tránh trùng khóa.
+        for lst in root.iter():
+            if local_name(lst.tag) != "hddList":
                 continue
-            hid = _find_text(hdd, "id")
-            if hid is None:
-                continue
-            prop = (_find_text(hdd, "property") or "").lower()
-            hdds.append(
-                HddInfo(
-                    hdd_id=int(re.sub(r"\D", "", hid) or 0),
-                    name=_find_text(hdd, "hddName"),
-                    capacity_mb=_to_int(_find_text(hdd, "capacity")),
-                    free_mb=_to_int(_find_text(hdd, "freeSpace")),
-                    status=_find_text(hdd, "status"),
-                    is_recording="rw" in prop or "r/w" in prop or "w" == prop,
+            for hdd in list(lst):
+                if local_name(hdd.tag) != "hdd":
+                    continue
+                hid = _child_text(hdd, "id")
+                if hid is None:
+                    continue
+                prop = _child_text(hdd, "property")
+                is_recording = (
+                    None
+                    if not prop
+                    else ("rw" in prop.lower() or "r/w" in prop.lower())
                 )
-            )
+                hdds.append(
+                    HddInfo(
+                        hdd_id=int(re.sub(r"\D", "", hid) or 0),
+                        name=_child_text(hdd, "hddName"),
+                        hdd_type=_child_text(hdd, "hddType"),
+                        capacity_mb=_to_int(_child_text(hdd, "capacity")),
+                        free_mb=_to_int(_child_text(hdd, "freeSpace")),
+                        status=_child_text(hdd, "status"),
+                        is_recording=is_recording,
+                    )
+                )
 
         raid_status: str | None = None
         for raid in root.iter():
             if local_name(raid.tag) != "raid":
                 continue
             # Lấy trạng thái RAID đầu tiên gặp được (thường chỉ 1 array).
-            raid_status = _find_text(raid, "status") or _find_text(raid, "raidStatus")
+            raid_status = _child_text(raid, "status") or _child_text(raid, "raidStatus")
             if raid_status:
                 break
 
@@ -299,6 +328,9 @@ class ISAPIClient:
         (404/parse/timeout) đều nuốt, để các trường smart_health/temperature_c = None.
         """
         for hdd in hdds:
+            # Volume ảo (RAID array) không có S.M.A.R.T -> bỏ qua.
+            if (hdd.hdd_type or "").lower().startswith("virtual"):
+                continue
             try:
                 smart = await self._get_xml(
                     client, f"/ISAPI/ContentMgmt/Storage/hdd/{hdd.hdd_id}/Smart"

@@ -64,22 +64,35 @@ def evaluate_storage(
     - Unknown : không có ổ nào (NVR không gắn ổ / chưa đọc được).
     """
     hdds: list[HddInfo] = storage.hdds
-    total_mb = sum(h.capacity_mb or 0 for h in hdds)
-    free_mb = sum(h.free_mb or 0 for h in hdds)
+
+    # Volume ghi (property RW): với NVR RAID là "Virtual Disk", với NVR thường là chính
+    # các đĩa vật lý RW. Dung lượng/%/số ngày lưu CHỈ tính trên đây để không cộng trùng
+    # đĩa thành viên (RO, freeSpace=0) làm %đầy sai.
+    recording = [h for h in hdds if h.is_recording]
+    cap_src = recording if recording else hdds
+    total_mb = sum(h.capacity_mb or 0 for h in cap_src)
+    free_mb = sum(h.free_mb or 0 for h in cap_src)
     used_pct = (
         round((total_mb - free_mb) / total_mb * 100, 1) if total_mb > 0 else None
     )
 
-    hdd_count = len(hdds)
+    # Đếm "số ổ" theo đĩa VẬT LÝ (loại trừ volume ảo) cho dễ hiểu; nếu không có đĩa
+    # vật lý nào (không phải RAID) thì đếm toàn bộ.
+    physical = [
+        h for h in hdds if not (h.hdd_type or "").lower().startswith("virtual")
+    ]
+    count_src = physical if physical else hdds
+    hdd_count = len(count_src)
+    healthy_hdds = [h for h in count_src if _is_ok(h.status)]
+    # Lỗi xét trên MỌI ổ (gồm cả đĩa thành viên RAID).
     error_hdds = [h for h in hdds if _is_bad(h.status)]
-    healthy_hdds = [h for h in hdds if _is_ok(h.status)]
     hdd_error_count = len(error_hdds)
 
     raid_bad = (storage.raid_status or "").strip().lower() in _RAID_BAD
     hot_hdds = [
         h for h in hdds if h.temperature_c is not None and h.temperature_c >= temp_warn_c
     ]
-    # "Mất ghi hình": có ổ nhưng không ổ nào đang ghi (R/W). Bỏ qua khi firmware
+    # "Mất ghi hình": có ổ nhưng không volume nào đang ghi (R/W). Bỏ qua khi firmware
     # không báo property (tất cả None) để tránh báo nhầm.
     recording_known = any(h.is_recording is not None for h in hdds)
     none_recording = recording_known and not any(h.is_recording for h in hdds)
@@ -87,7 +100,7 @@ def evaluate_storage(
     reasons: list[str] = []
     has_disk_error = bool(error_hdds) or none_recording
 
-    if hdd_count == 0:
+    if not hdds:
         return StorageEvaluation(
             overall=StorageStatus.UNKNOWN,
             total_mb=0,

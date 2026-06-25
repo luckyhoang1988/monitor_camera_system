@@ -160,15 +160,16 @@ class NVRHdd(Base):
     """Trạng thái HIỆN TẠI của từng ổ cứng trong 1 NVR (mô phỏng camera_channels)."""
 
     __tablename__ = "nvr_hdd"
-    __table_args__ = (
-        Index("ix_nvr_hdd_nvr_hddid", "nvr_id", "hdd_id", unique=True),
-    )
+    # KHÔNG unique theo (nvr_id, hdd_id): NVR RAID có volume ảo và đĩa vật lý trùng id.
+    # Mỗi lượt quét xóa-rồi-ghi-lại toàn bộ ổ của NVR nên không tích lũy trùng.
+    __table_args__ = (Index("ix_nvr_hdd_nvr", "nvr_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nvr_id: Mapped[int] = mapped_column(
         ForeignKey("nvr_devices.id", ondelete="CASCADE")
     )
     hdd_id: Mapped[int] = mapped_column(Integer)
+    hdd_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     capacity_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     free_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)

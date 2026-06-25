@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collector.camera_checker import evaluate_cameras
@@ -304,26 +304,26 @@ async def update_nvr_storage(
     ev = evaluate_storage(storage, temp_warn_c=temp_warn_c)
     now = _now()
 
-    # Upsert hàng nvr_hdd theo (nvr_id, hdd_id).
-    existing = {
-        h.hdd_id: h
-        for h in (
-            await session.scalars(select(NVRHdd).where(NVRHdd.nvr_id == nvr.id))
-        ).all()
-    }
+    # Xóa-rồi-ghi-lại toàn bộ ổ của NVR: NVR RAID có volume ảo + đĩa vật lý trùng id
+    # nên không upsert theo (nvr_id, hdd_id) được; số ổ ít (<=16) nên delete+insert rẻ.
+    await session.execute(delete(NVRHdd).where(NVRHdd.nvr_id == nvr.id))
+    await session.flush()
     for hdd in storage.hdds:
-        row = existing.get(hdd.hdd_id)
-        if row is None:
-            row = NVRHdd(nvr_id=nvr.id, hdd_id=hdd.hdd_id)
-            session.add(row)
-        row.name = hdd.name or row.name
-        row.capacity_mb = hdd.capacity_mb
-        row.free_mb = hdd.free_mb
-        row.status = hdd.status
-        row.is_recording = hdd.is_recording
-        row.smart_health = hdd.smart_health
-        row.temperature_c = hdd.temperature_c
-        row.last_checked_at = now
+        session.add(
+            NVRHdd(
+                nvr_id=nvr.id,
+                hdd_id=hdd.hdd_id,
+                hdd_type=hdd.hdd_type,
+                name=hdd.name,
+                capacity_mb=hdd.capacity_mb,
+                free_mb=hdd.free_mb,
+                status=hdd.status,
+                is_recording=hdd.is_recording,
+                smart_health=hdd.smart_health,
+                temperature_c=hdd.temperature_c,
+                last_checked_at=now,
+            )
+        )
 
     # Cập nhật cột tóm tắt trên NVR.
     nvr.storage_status = ev.overall.value
