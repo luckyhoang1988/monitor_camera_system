@@ -36,21 +36,17 @@ python -c "import app.main"         # smoke import (bắt lỗi import-time)
   `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
 - KHÔNG add `plan_print.md` và file rác.
 
-## 4. Deploy production (sau khi push) — repo PRIVATE nên git pull HỎNG trên server
-Quy trình đang dùng (chi tiết server/SSH ở memory `prod-deployment`):
+## 4. Deploy production — dùng `scripts/deploy.sh` (chạy từ máy dev TRONG LAN)
+Server ở IP nội bộ 10.0.193.233 → cloud CI/CD bất khả; deploy từ LAN.
 ```bash
-# 1. push
-git push origin main
-
-# 2. chép CHÍNH XÁC các file của commit (giữ WIP khác trên server) qua tar+ssh
-git show --name-only --pretty=format: <SHA> | grep -v '^$' > /tmp/f.txt
-tar -czf - -T /tmp/f.txt | ssh chek-nvr 'cd ~/Chek_NVR && tar -xzf -'
-
-# 3. build + restart (entrypoint TỰ chạy `alembic upgrade head`)
-ssh chek-nvr 'cd ~/Chek_NVR && docker compose build app && docker compose up -d app'
+git push origin main          # 1. push
+./scripts/deploy.sh           # 2. giao HEAD qua git archive + build + up (migration tự chạy)
+./scripts/deploy.sh <sha>     #    rollback về 1 commit nếu cần
 ```
-- ⚠️ Server có **WIP chưa commit** = phần đã commit ở local. Trước khi đè file chồng lấn, **so md5** với bản đã commit; chỉ chép file của đúng commit, KHÔNG đụng file khác.
+- `deploy.sh` giao **đúng cây HEAD đã commit** (chỉ file tracked → KHÔNG đụng .env/tls/backups),
+  deterministic — **bỏ hẳn màn scp/md5 thủ công**. Chi tiết: [docs/CD_AND_SCALING.md](../../../docs/CD_AND_SCALING.md).
 - `docker compose exec -T ...` luôn kèm `< /dev/null`. Truy cập app: **https://10.0.193.233**.
+- Chi tiết server/SSH/quirks ở memory `prod-deployment`.
 
 ## 5. Verify sau deploy
 - Xem log: migration đã `upgrade`, `Application startup complete`, đủ job scheduler.
