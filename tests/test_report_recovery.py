@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -29,7 +29,7 @@ def test_recovery_events_detected_with_previous_status_before_range():
     async def run():
         engine, Session = await _make_session()
         async with Session() as session:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             start = now - timedelta(hours=1)
             end = now
 
@@ -103,7 +103,7 @@ def test_camera_recovery_collects_all_transitions_in_range():
     async def run():
         engine, Session = await _make_session()
         async with Session() as session:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             start = now - timedelta(hours=1)
             end = now
 
@@ -166,7 +166,7 @@ def test_recovery_events_respect_area_filter():
     async def run():
         engine, Session = await _make_session()
         async with Session() as session:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             start = now - timedelta(hours=1)
             end = now
 

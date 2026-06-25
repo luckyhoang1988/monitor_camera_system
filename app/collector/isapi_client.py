@@ -340,7 +340,7 @@ class ISAPIClient:
                 smart = await self._get_xml(
                     client, f"/ISAPI/ContentMgmt/Storage/hdd/{hdd.hdd_id}/Smart"
                 )
-            except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError):
+            except (TimeoutError, ISAPIError, httpx.HTTPError, OSError):
                 continue
             hdd.smart_health = _find_text(smart, "evaluation") or _find_text(
                 smart, "selfEvaluation"

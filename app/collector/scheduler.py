@@ -30,13 +30,13 @@ from app.services.event_bus import (
     event_bus,
 )
 from app.services.retention_service import purge_old_logs
-from app.services.telegram_notifier import flush_telegram_notifications
 from app.services.status_service import (
     check_and_update_nvr_health,
     log_cameras_unreachable,
     update_nvr_cameras,
     update_nvr_storage,
 )
+from app.services.telegram_notifier import flush_telegram_notifications
 
 logger = logging.getLogger("chek_nvr.scheduler")
 

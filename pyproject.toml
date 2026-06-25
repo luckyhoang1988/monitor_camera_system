@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "B008",   # function-call-in-default — idiom FastAPI (Depends/Query/Form)
+    "UP042",  # str-Enum: dự án dùng `class X(str, Enum)` nhất quán (xem CLAUDE.md §6)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test: assertion dài cho dễ đọc, không ép xuống dòng.
+"tests/*" = ["E501"]
+
+[tool.pytest.ini_options]
+# Test async hiện dùng asyncio.run() trong hàm sync nên không cần asyncio_mode.
+testpaths = ["tests"]
+addopts = "-q"

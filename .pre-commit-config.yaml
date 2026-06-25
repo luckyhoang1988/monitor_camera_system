@@ -1,0 +1,16 @@
+# Cài: pip install pre-commit && pre-commit install
+# Chạy tay toàn bộ: pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.19
+    hooks:
+      - id: ruff           # lint (tự sửa được thì --fix)
+        args: [--fix]
+      - id: ruff-format    # format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files

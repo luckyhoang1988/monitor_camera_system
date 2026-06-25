@@ -67,7 +67,7 @@ async def ping_host(host: str, timeout: int = 3) -> bool:
         )
         rc = await asyncio.wait_for(proc.wait(), timeout=timeout + 2)
         return rc == 0
-    except (asyncio.TimeoutError, OSError):
+    except (TimeoutError, OSError):
         return False
 
 
@@ -82,7 +82,7 @@ async def check_tcp_port(host: str, port: int, timeout: int = 3) -> bool:
         except Exception:  # noqa: BLE001 - đóng socket không quan trọng nếu lỗi
             pass
         return True
-    except (asyncio.TimeoutError, OSError):
+    except (TimeoutError, OSError):
         return False
 
 
@@ -158,7 +158,7 @@ async def check_nvr(
             port_ok=port_ok,
             error=str(exc),
         )
-    except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
+    except (TimeoutError, ISAPIError, httpx.HTTPError, OSError) as exc:
         # Tới được thiết bị nhưng API lỗi/timeout -> Warning; nếu không -> Network Error
         raw = NVRStatus.WARNING if (ping_ok or port_ok) else NVRStatus.NETWORK_ERROR
         return NVRCheckResult(
@@ -202,7 +202,7 @@ async def fetch_nvr_channels(
         client = await get_client(client_obj.base_url)
         channels = await client_obj.get_channels(client)
         return channels, None
-    except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
+    except (TimeoutError, ISAPIError, httpx.HTTPError, OSError) as exc:
         return [], str(exc)
 
 
@@ -244,10 +244,10 @@ async def fetch_nvr_storage(
             storage.total_bitrate_kbps = await client_obj.get_record_bitrate_kbps(
                 client
             )
-        except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError):
+        except (TimeoutError, ISAPIError, httpx.HTTPError, OSError):
             pass
         return storage, None
-    except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
+    except (TimeoutError, ISAPIError, httpx.HTTPError, OSError) as exc:
         return None, str(exc)
 
 

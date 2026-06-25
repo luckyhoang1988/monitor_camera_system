@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, time, timezone
+from datetime import UTC, datetime, time
 from math import ceil
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -30,7 +30,7 @@ from app.config import get_settings
 from app.db.base import get_session
 from app.db.models import NVRDevice
 from app.services.event_bus import event_bus
-from app.services.user_service import UserServiceError, change_own_password
+from app.services.excel_export import build_offline_cameras_xlsx, build_report_xlsx
 from app.services.nvr_service import (
     check_nvr_now,
     create_nvr,
@@ -45,10 +45,10 @@ from app.services.query_service import (
     list_nvrs,
     list_offline_cameras,
 )
-from app.services.excel_export import build_offline_cameras_xlsx, build_report_xlsx
 from app.services.report_service import build_uptime_report
-from app.services.system_service import get_storage_usage
 from app.services.retention_service import purge_logs_in_range
+from app.services.system_service import get_storage_usage
+from app.services.user_service import UserServiceError, change_own_password
 
 router = APIRouter()
 
@@ -241,7 +241,7 @@ async def sse_events(request: Request) -> StreamingResponse:
                     event = await asyncio.wait_for(
                         queue.get(), timeout=_SSE_PING_INTERVAL
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": ping\n\n"  # keep-alive (comment, client bỏ qua)
                     continue
                 payload = json.dumps(event["data"], ensure_ascii=False)
@@ -444,8 +444,8 @@ def _parse_report_range(
         return None, None
     if start_d > end_d:
         return None, None
-    start = datetime.combine(start_d, time.min, tzinfo=tz).astimezone(timezone.utc)
-    end = datetime.combine(end_d, time.max, tzinfo=tz).astimezone(timezone.utc)
+    start = datetime.combine(start_d, time.min, tzinfo=tz).astimezone(UTC)
+    end = datetime.combine(end_d, time.max, tzinfo=tz).astimezone(UTC)
     return start, end
 
 
@@ -590,8 +590,8 @@ async def alerts_purge(
         end_d = datetime.strptime(to_date, "%Y-%m-%d").date()
         if start_d > end_d:
             raise ValueError("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.")
-        start = datetime.combine(start_d, time.min, tzinfo=tz).astimezone(timezone.utc)
-        end = datetime.combine(end_d, time.max, tzinfo=tz).astimezone(timezone.utc)
+        start = datetime.combine(start_d, time.min, tzinfo=tz).astimezone(UTC)
+        end = datetime.combine(end_d, time.max, tzinfo=tz).astimezone(UTC)
         result = await purge_logs_in_range(session, start=start, end=end)
         await session.commit()
         ctx["result"] = result

@@ -10,7 +10,7 @@ Tách riêng hàm thuần (nhận cutoff) khỏi I/O scheduler để dễ test b
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,7 +47,7 @@ async def purge_old_logs(
         # 0/âm = tắt retention (giữ toàn bộ log).
         return PurgeResult()
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
 
     nvr_res = await session.execute(
         delete(NVRStatusLog).where(NVRStatusLog.checked_at < cutoff)

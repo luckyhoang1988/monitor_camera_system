@@ -8,7 +8,7 @@ chu kỳ quét đều ghi một bản ghi log, đây là xấp xỉ tốt cho % 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import Integer, case, func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +18,7 @@ from app.enums import CameraStatus, NVRStatus
 
 
 def _cutoff(days: int) -> datetime:
-    return datetime.now(timezone.utc) - timedelta(days=days)
+    return datetime.now(UTC) - timedelta(days=days)
 
 
 def _window(
@@ -30,7 +30,7 @@ def _window(
     cửa sổ tương đối `days` ngày gần nhất (end = None = đến hiện tại).
     """
     if start is not None or end is not None:
-        end_dt = end if end is not None else datetime.now(timezone.utc)
+        end_dt = end if end is not None else datetime.now(UTC)
         start_dt = start if start is not None else (end_dt - timedelta(days=days))
         return start_dt, end_dt
     return _cutoff(days), None

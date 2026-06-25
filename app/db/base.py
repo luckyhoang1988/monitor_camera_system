@@ -30,7 +30,7 @@ class Base(DeclarativeBase):
     """Declarative base cho toàn bộ ORM models."""
 
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_session() -> AsyncGenerator[AsyncSession]:
     """FastAPI dependency: cấp một AsyncSession cho mỗi request."""
     async with AsyncSessionLocal() as session:
         yield session

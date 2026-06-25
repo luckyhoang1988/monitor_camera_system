@@ -11,7 +11,7 @@ Bản đầu chỉ ghi alert vào DB để hiển thị trên dashboard; các k�
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,8 +24,8 @@ from app.enums import (
     AlertStatus,
     AlertType,
     NVRStatus,
+    StorageStatus,
 )
-from app.enums import StorageStatus
 from app.services.status_service import (
     CameraEvent,
     CameraScanOutcome,
@@ -80,7 +80,7 @@ async def _resolve_open_alerts(
         .where(*cond)
         .values(
             status=AlertStatus.RESOLVED.value,
-            resolved_at=datetime.now(timezone.utc),
+            resolved_at=datetime.now(UTC),
         )
     )
     if result.rowcount:
@@ -137,7 +137,7 @@ async def _create_alert(
             status=(
                 AlertStatus.RESOLVED.value if is_event else AlertStatus.OPEN.value
             ),
-            resolved_at=datetime.now(timezone.utc) if is_event else None,
+            resolved_at=datetime.now(UTC) if is_event else None,
         )
     )
     # Xếp hàng đẩy lên Telegram; gửi thật sau khi commit (xem flush ở call site).

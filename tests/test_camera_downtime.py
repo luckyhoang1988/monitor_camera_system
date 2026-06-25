@@ -9,7 +9,7 @@ vì bỏ trống. Nhờ đó:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -61,7 +61,7 @@ def test_log_cameras_unreachable_writes_unknown_for_each_camera():
                 await session.execute(select(CameraStatusLog))
             ).scalars().all()
             assert len(logs) == 2
-            assert all(l.status == CameraStatus.UNKNOWN.value for l in logs)
+            assert all(log.status == CameraStatus.UNKNOWN.value for log in logs)
         await engine.dispose()
 
     asyncio.run(run())
@@ -71,7 +71,7 @@ def test_nvr_downtime_lowers_camera_uptime():
     async def run():
         engine, Session = await _make_session()
         async with Session() as session:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             start = now - timedelta(hours=1)
 
             nvr = NVRDevice(
@@ -116,7 +116,7 @@ def test_unknown_to_online_is_not_a_camera_recovery():
     async def run():
         engine, Session = await _make_session()
         async with Session() as session:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             start = now - timedelta(hours=1)
 
             nvr = NVRDevice(

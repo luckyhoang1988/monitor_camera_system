@@ -8,7 +8,7 @@ Dùng SQLite in-memory (StaticPool = chia sẻ 1 connection) nên không cần P
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -86,7 +86,7 @@ def test_fetch_timeout_keeps_alert_and_offline_since(monkeypatch):
         engine, Session = await _make_session()
         async with Session() as session:
             nvr = await _add_nvr(session)
-            past = datetime.now(timezone.utc) - timedelta(minutes=30)
+            past = datetime.now(UTC) - timedelta(minutes=30)
             cam = CameraChannel(
                 nvr_id=nvr.id,
                 channel_no=1,
@@ -153,7 +153,7 @@ def test_recovery_resolves_alert(monkeypatch):
             await _update_cameras(session, nvr.id, ch_off)
             cam = (await session.scalars(select(CameraChannel))).one()
             # Backdate để vượt ngưỡng phút -> lần quét sau tính là alertable.
-            cam.offline_since = datetime.now(timezone.utc) - timedelta(hours=1)
+            cam.offline_since = datetime.now(UTC) - timedelta(hours=1)
             await session.flush()
 
             offline, recovered, _ = await _update_cameras(session, nvr.id, ch_off)
@@ -242,7 +242,7 @@ def test_nat_half_open_no_alert_flapping(monkeypatch):
         engine, Session = await _make_session()
         async with Session() as session:
             nvr = await _add_nvr(session)
-            past = datetime.now(timezone.utc) - timedelta(minutes=30)
+            past = datetime.now(UTC) - timedelta(minutes=30)
             session.add(
                 CameraChannel(
                     nvr_id=nvr.id,

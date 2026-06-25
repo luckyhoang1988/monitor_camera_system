@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Postgres thật để chạy migration up/down (bắt lỗi migration sớm).
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: chek_nvr
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: chek_nvr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chek_nvr -d chek_nvr"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://chek_nvr:password@localhost:5432/chek_nvr
+      ENCRYPTION_KEY: 6S0n2v7k3J5pQfYwZ8xR1tB4cD9eH0gM2nP4rS6uV8w=  # khoá Fernet giả cho CI
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Cài dependency + ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt ruff
+
+      - name: Lint (ruff)
+        run: ruff check app/ tests/
+
+      - name: Test (pytest, DB in-memory sqlite)
+        run: pytest
+
+      - name: Migration lên/xuống (Postgres)
+        run: |
+          alembic upgrade head
+          alembic downgrade base
