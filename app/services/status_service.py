@@ -189,6 +189,40 @@ async def update_nvr_cameras(
     )
 
 
+async def log_cameras_unreachable(session: AsyncSession, nvr: NVRDevice) -> None:
+    """Ghi camera_status_logs = Unknown cho mọi camera của 1 NVR đang KHÔNG Online.
+
+    Khi NVR rớt, job camera không quét được kênh nào -> trước đây không có log nào,
+    nên uptime camera trong báo cáo bị "bỏ trống" (không bị trừ thời gian NVR chết).
+    Hàm này ghi log Unknown ("không đo được vì NVR offline") ở ĐÚNG nhịp job camera để
+    tỷ lệ uptime cân bằng với lúc NVR online.
+
+    KHÔNG đổi current_status/offline_since và KHÔNG sinh alert (cảnh báo NVR-level đã
+    đảm nhiệm) — đây chỉ là dữ liệu thống kê. Dùng Unknown (không phải Offline) để
+    không thổi phồng bảng "top camera offline" — vốn phản ánh lỗi cấp camera, không
+    phải lỗi NVR.
+    """
+    cam_ids = (
+        await session.scalars(
+            select(CameraChannel.id).where(CameraChannel.nvr_id == nvr.id)
+        )
+    ).all()
+    if not cam_ids:
+        return
+    msg = f"NVR {nvr.current_status} — không quét được camera"
+    for cid in cam_ids:
+        session.add(
+            CameraStatusLog(
+                camera_id=cid, status=CameraStatus.UNKNOWN.value, error_msg=msg
+            )
+        )
+    logger.info(
+        "NVR %s không Online -> ghi %d log camera Unknown (cho báo cáo uptime)",
+        nvr.id,
+        len(cam_ids),
+    )
+
+
 async def _update_cameras(
     session: AsyncSession, nvr_id: int, channels: list
 ) -> tuple[list[CameraEvent], list[CameraEvent]]:

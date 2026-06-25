@@ -471,7 +471,13 @@ async def camera_recovery_events(
             cam_lagged.c.checked_at >= start_dt,
             cam_lagged.c.status == CameraStatus.ONLINE.value,
             cam_lagged.c.prev_status.is_not(None),
-            cam_lagged.c.prev_status != CameraStatus.ONLINE.value,
+            # Bỏ qua Unknown: log Unknown là trạng thái tổng hợp khi NVR offline (xem
+            # log_cameras_unreachable). Coi Unknown->Online là "hồi phục camera" sẽ làm
+            # ngập danh sách recovery mỗi lần NVR sống lại. Chỉ tính hồi phục từ lỗi
+            # thực cấp camera (Offline/No Signal/Auth Failed).
+            cam_lagged.c.prev_status.not_in(
+                (CameraStatus.ONLINE.value, CameraStatus.UNKNOWN.value)
+            ),
         )
         .order_by(cam_lagged.c.checked_at.desc())
     )

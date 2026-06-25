@@ -22,6 +22,7 @@ from app.services.retention_service import purge_old_logs
 from app.services.telegram_notifier import flush_telegram_notifications
 from app.services.status_service import (
     check_and_update_nvr_health,
+    log_cameras_unreachable,
     update_nvr_cameras,
 )
 
@@ -61,7 +62,12 @@ async def _health_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
 
 
 async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
-    """Quét camera của 1 NVR (giả định NVR đang Online)."""
+    """Quét camera của 1 NVR.
+
+    - NVR Online: fetch kênh thật + cập nhật trạng thái + xử lý alert.
+    - NVR không Online: không fetch được; ghi log camera Unknown để báo cáo uptime
+      camera bị trừ đúng thời gian NVR chết (không alert — alert NVR-level đã lo).
+    """
     settings = get_settings()
     async with sem:
         async with AsyncSessionLocal() as session:
@@ -69,16 +75,19 @@ async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
             if nvr is None or not nvr.enabled:
                 return
             try:
-                nvr_name = nvr.name
-                outcome = await update_nvr_cameras(
-                    session, nvr, timeout=settings.request_timeout
-                )
-                # Chỉ đụng alert khi có dữ liệu camera tin cậy. Fetch lỗi (ok=False)
-                # -> giữ nguyên alert/offline_since để tránh resolve nhầm khi timeout.
-                if outcome.ok:
-                    await process_camera_alerts(
-                        session, nvr_id, nvr_name, outcome
+                if NVRStatus(nvr.current_status) == NVRStatus.ONLINE:
+                    nvr_name = nvr.name
+                    outcome = await update_nvr_cameras(
+                        session, nvr, timeout=settings.request_timeout
                     )
+                    # Chỉ đụng alert khi có dữ liệu camera tin cậy. Fetch lỗi (ok=False)
+                    # -> giữ nguyên alert/offline_since để tránh resolve nhầm khi timeout.
+                    if outcome.ok:
+                        await process_camera_alerts(
+                            session, nvr_id, nvr_name, outcome
+                        )
+                else:
+                    await log_cameras_unreachable(session, nvr)
                 await session.commit()
                 await flush_telegram_notifications(session)
             except Exception:  # noqa: BLE001 - 1 NVR lỗi không được dừng cả batch
@@ -109,25 +118,27 @@ async def scan_nvr_health() -> None:
 
 
 async def scan_cameras() -> None:
-    """Quét camera cho các NVR đang Online (tần suất thấp hơn job health)."""
+    """Quét camera cho toàn bộ NVR đang bật.
+
+    NVR Online -> fetch kênh thật; NVR không Online -> ghi log camera Unknown (để
+    báo cáo uptime camera phản ánh cả thời gian NVR chết). Chạy ở tần suất thấp hơn
+    job health, cùng nhịp cho cả hai nhánh nên tỷ lệ uptime không bị lệch.
+    """
     settings = get_settings()
     sem = asyncio.Semaphore(settings.max_concurrency)
 
     async with AsyncSessionLocal() as session:
         ids = (
             await session.scalars(
-                select(NVRDevice.id).where(
-                    NVRDevice.enabled.is_(True),
-                    NVRDevice.current_status == NVRStatus.ONLINE.value,
-                )
+                select(NVRDevice.id).where(NVRDevice.enabled.is_(True))
             )
         ).all()
 
     if not ids:
-        logger.info("Không có NVR Online nào để quét camera.")
+        logger.info("Không có NVR nào để quét camera.")
         return
 
-    logger.info("Quét camera của %d NVR Online", len(ids))
+    logger.info("Quét camera của %d NVR (Online: fetch; offline: ghi log Unknown)", len(ids))
     await asyncio.gather(*(_cameras_one(i, sem) for i in ids))
 
 
