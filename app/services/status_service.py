@@ -119,16 +119,32 @@ async def check_and_update_nvr_health(
 
 
 @dataclass
+class CameraEvent:
+    """Một camera có chuyển trạng thái đáng báo cáo, kèm thông tin định danh.
+
+    Đủ để dựng nội dung alert chi tiết: camera kênh nào, tên gì, thuộc NVR nào
+    (nvr_name do caller biết).
+    """
+
+    camera_id: int
+    channel_no: int
+    name: str | None
+
+
+@dataclass
 class CameraScanOutcome:
     """Kết quả quét camera 1 NVR.
 
     `ok=False` nghĩa là KHÔNG lấy được dữ liệu tin cậy (fetch lỗi/timeout hoặc NVR
     không trả kênh nào) — caller phải BỎ QUA xử lý alert để tránh resolve nhầm.
-    Chỉ khi `ok=True` thì `alertable_offline` mới phản ánh trạng thái thật.
+    Chỉ khi `ok=True` thì các danh sách sự kiện mới phản ánh trạng thái thật:
+    - `offline_alertable`: camera offline liên tục >= ngưỡng phút (đủ điều kiện alert).
+    - `recovered`: camera vừa chuyển từ offline -> online ở lần quét này.
     """
 
     ok: bool
-    alertable_offline: int
+    offline_alertable: list[CameraEvent]
+    recovered: list[CameraEvent]
 
 
 async def update_nvr_cameras(
@@ -166,19 +182,24 @@ async def update_nvr_cameras(
             logger.info(
                 "Camera NVR %s không trả kênh nào — bỏ qua cập nhật camera", nvr.id
             )
-        return CameraScanOutcome(ok=False, alertable_offline=0)
-    alertable = await _update_cameras(session, nvr.id, channels)
-    return CameraScanOutcome(ok=True, alertable_offline=alertable)
+        return CameraScanOutcome(ok=False, offline_alertable=[], recovered=[])
+    offline_alertable, recovered = await _update_cameras(session, nvr.id, channels)
+    return CameraScanOutcome(
+        ok=True, offline_alertable=offline_alertable, recovered=recovered
+    )
 
 
 async def _update_cameras(
     session: AsyncSession, nvr_id: int, channels: list
-) -> int:
+) -> tuple[list[CameraEvent], list[CameraEvent]]:
     """Upsert camera_channels theo (nvr_id, channel_no), ghi camera_status_logs.
 
     Theo dõi `offline_since` cho từng camera (set khi chuyển offline, clear khi
-    online lại). Trả về **số camera offline liên tục >= `camera_offline_alert_min`
-    phút** — đây là tập đủ điều kiện để sinh alert (xem alert_service §5).
+    online lại). Trả về `(offline_alertable, recovered)`:
+    - `offline_alertable`: camera offline liên tục >= `camera_offline_alert_min`
+      phút — tập đủ điều kiện sinh alert (xem alert_service §5).
+    - `recovered`: camera vừa chuyển từ offline -> online ở lần quét này.
+    Mỗi phần tử là `CameraEvent` (camera_id/channel_no/name) để dựng alert chi tiết.
     """
     existing = {
         c.channel_no: c
@@ -191,13 +212,16 @@ async def _update_cameras(
 
     now = _now()
     threshold = timedelta(minutes=get_settings().camera_offline_alert_min)
-    alertable_offline = 0
     evaluated = evaluate_cameras(channels)
 
-    # Bước 1: upsert hàng camera (tạo mới nếu chưa có).
+    # Bước 1: upsert hàng camera (tạo mới nếu chưa có) + ghi nhận chuyển trạng thái.
     rows: list[tuple[CameraChannel, object]] = []
+    offline_rows: list[CameraChannel] = []
+    recovered_rows: list[CameraChannel] = []
     for cam in evaluated:
         row = existing.get(cam.channel_no)
+        # Trạng thái ở lần quét trước (None nếu camera mới xuất hiện).
+        prev_status = row.current_status if row is not None else None
         if row is None:
             row = CameraChannel(nvr_id=nvr_id, channel_no=cam.channel_no)
             session.add(row)
@@ -210,12 +234,15 @@ async def _update_cameras(
             if row.offline_since is None:
                 row.offline_since = now
             if now - row.offline_since >= threshold:
-                alertable_offline += 1
+                offline_rows.append(row)
         elif cam.status in _CAMERA_UP_STATES:
             # Chỉ xóa mốc offline khi chắc chắn camera đã lên lại (Online) hoặc bị
             # tắt có chủ đích (Disabled). Trạng thái không tin cậy (Unknown/Auth
             # Failed/No Signal) -> giữ nguyên offline_since (không set, không xóa).
             row.offline_since = None
+        # Hồi phục: kênh đang offline ở lần trước nay đã Online lại.
+        if cam.status == CameraStatus.ONLINE and prev_status == CameraStatus.OFFLINE.value:
+            recovered_rows.append(row)
         rows.append((row, cam))
 
     # Bước 2: flush để hàng mới có id, rồi ghi log theo camera_id.
@@ -229,4 +256,7 @@ async def _update_cameras(
             )
         )
 
-    return alertable_offline
+    def _event(row: CameraChannel) -> CameraEvent:
+        return CameraEvent(camera_id=row.id, channel_no=row.channel_no, name=row.name)
+
+    return [_event(r) for r in offline_rows], [_event(r) for r in recovered_rows]

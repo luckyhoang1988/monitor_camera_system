@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import Alert
 from app.enums import AlertSeverity, AlertStatus, AlertType, NVRStatus
-from app.services.status_service import NVRHealthOutcome
+from app.services.status_service import (
+    CameraEvent,
+    CameraScanOutcome,
+    NVRHealthOutcome,
+)
 from app.services.telegram_notifier import queue_alert
 
 logger = logging.getLogger("chek_nvr.alert")
@@ -29,28 +33,43 @@ _DOWN_STATES = {NVRStatus.OFFLINE, NVRStatus.NETWORK_ERROR, NVRStatus.AUTH_ERROR
 
 
 async def _has_open_alert(
-    session: AsyncSession, nvr_id: int, alert_type: AlertType
+    session: AsyncSession,
+    nvr_id: int,
+    alert_type: AlertType,
+    *,
+    camera_id: int | None = None,
 ) -> bool:
-    found = await session.scalar(
-        select(Alert.id).where(
-            Alert.nvr_id == nvr_id,
-            Alert.type == alert_type.value,
-            Alert.status == AlertStatus.OPEN.value,
-        )
+    """Có alert OPEN cùng loại không? Theo camera nếu `camera_id`, nếu không theo NVR."""
+    stmt = select(Alert.id).where(
+        Alert.type == alert_type.value,
+        Alert.status == AlertStatus.OPEN.value,
     )
-    return found is not None
+    if camera_id is not None:
+        stmt = stmt.where(Alert.camera_id == camera_id)
+    else:
+        stmt = stmt.where(Alert.nvr_id == nvr_id)
+    return await session.scalar(stmt) is not None
 
 
 async def _resolve_open_alerts(
-    session: AsyncSession, nvr_id: int, alert_type: AlertType
+    session: AsyncSession,
+    nvr_id: int,
+    alert_type: AlertType,
+    *,
+    camera_id: int | None = None,
 ) -> None:
+    """Resolve alert OPEN cùng loại; theo camera nếu `camera_id`, nếu không theo NVR."""
+    cond = [
+        Alert.type == alert_type.value,
+        Alert.status == AlertStatus.OPEN.value,
+    ]
+    if camera_id is not None:
+        cond.append(Alert.camera_id == camera_id)
+    else:
+        cond.append(Alert.nvr_id == nvr_id)
     result = await session.execute(
         update(Alert)
-        .where(
-            Alert.nvr_id == nvr_id,
-            Alert.type == alert_type.value,
-            Alert.status == AlertStatus.OPEN.value,
-        )
+        .where(*cond)
         .values(
             status=AlertStatus.RESOLVED.value,
             resolved_at=datetime.now(timezone.utc),
@@ -58,10 +77,11 @@ async def _resolve_open_alerts(
     )
     if result.rowcount:
         logger.info(
-            "Resolve %d alert %s cho NVR %s (đã hồi phục)",
+            "Resolve %d alert %s (NVR %s, camera %s) — đã hồi phục",
             result.rowcount,
             alert_type.value,
             nvr_id,
+            camera_id if camera_id is not None else "-",
         )
 
 
@@ -72,22 +92,26 @@ async def _create_alert(
     alert_type: AlertType,
     severity: AlertSeverity,
     message: str,
+    camera_id: int | None = None,
     is_event: bool = False,
 ) -> None:
     """Tạo alert + xếp hàng Telegram.
 
-    `is_event=True` cho các thông báo tức thời (vd: recovery): bỏ qua dedupe
-    theo alert OPEN và ghi thẳng RESOLVED — vì đây là sự kiện, không phải trạng
-    thái lỗi kéo dài. Nếu giữ OPEN + dedupe thì từ lần recovery thứ 2 trở đi sẽ
-    bị chặn, không đẩy được Telegram.
+    `camera_id` -> alert cấp camera (dedupe theo camera). `is_event=True` cho các
+    thông báo tức thời (vd: recovery): bỏ qua dedupe theo alert OPEN và ghi thẳng
+    RESOLVED — vì đây là sự kiện, không phải trạng thái lỗi kéo dài. Nếu giữ OPEN
+    + dedupe thì từ lần recovery thứ 2 trở đi sẽ bị chặn, không đẩy được Telegram.
     """
-    if not is_event and await _has_open_alert(session, nvr_id, alert_type):
+    if not is_event and await _has_open_alert(
+        session, nvr_id, alert_type, camera_id=camera_id
+    ):
         return
     logger.info(
-        "Tạo alert %s (%s) cho NVR %s: %s",
+        "Tạo alert %s (%s) cho NVR %s camera %s: %s",
         alert_type.value,
         severity.value,
         nvr_id,
+        camera_id if camera_id is not None else "-",
         message,
     )
     session.add(
@@ -95,6 +119,7 @@ async def _create_alert(
             type=alert_type.value,
             severity=severity.value,
             nvr_id=nvr_id,
+            camera_id=camera_id,
             message=message,
             status=(
                 AlertStatus.RESOLVED.value if is_event else AlertStatus.OPEN.value
@@ -166,42 +191,60 @@ async def process_nvr_alerts(
         await _resolve_open_alerts(session, outcome.nvr_id, AlertType.SLOW_RESPONSE)
 
 
+def _camera_label(event: CameraEvent) -> str:
+    """Nhãn camera chi tiết cho nội dung alert: 'kênh 3 (Cổng chính)'."""
+    label = f"kênh {event.channel_no}"
+    if event.name:
+        label += f" ({event.name})"
+    return label
+
+
 async def process_camera_alerts(
     session: AsyncSession,
     nvr_id: int,
     nvr_name: str,
-    offline_count: int,
+    outcome: CameraScanOutcome,
 ) -> None:
-    """Tạo/resolve alert camera offline (>= camera_offline_alert_min phút).
+    """Tạo/resolve alert offline + báo recovery THEO TỪNG CAMERA (kênh nào, tên gì).
 
-    Gọi ở job camera cho NVR đang Online: `offline_count` là số camera offline
-    đủ lâu. 0 -> resolve alert camera đang mở (đã hồi phục).
+    Gọi ở job camera cho NVR đang Online:
+    - `outcome.offline_alertable`: từng camera offline đủ lâu -> alert riêng (dedupe
+      theo camera_id nên mỗi camera chỉ báo 1 lần tới khi hồi phục).
+    - `outcome.recovered`: từng camera vừa online lại -> resolve alert của camera đó
+      và báo recovery (chỉ khi trước đó thực sự có alert offline mở, tránh spam blip).
     """
     settings = get_settings()
-    if offline_count > 0:
+
+    for ev in outcome.offline_alertable:
         await _create_alert(
             session,
             nvr_id=nvr_id,
+            camera_id=ev.camera_id,
             alert_type=AlertType.CAMERA_OFFLINE,
             severity=AlertSeverity.WARNING,
             message=(
-                f"NVR '{nvr_name}' có {offline_count} camera offline "
+                f"NVR '{nvr_name}' — Camera {_camera_label(ev)} offline "
                 f"quá {settings.camera_offline_alert_min} phút."
             ),
         )
-    else:
-        # Chỉ báo recovery khi trước đó thực sự đang có alert camera offline mở
-        # (chuyển từ trạng thái đã cảnh báo về bình thường), tránh spam mỗi lần quét.
+
+    for ev in outcome.recovered:
         had_alert = await _has_open_alert(
-            session, nvr_id, AlertType.CAMERA_OFFLINE
+            session, nvr_id, AlertType.CAMERA_OFFLINE, camera_id=ev.camera_id
         )
-        await _resolve_open_alerts(session, nvr_id, AlertType.CAMERA_OFFLINE)
+        await _resolve_open_alerts(
+            session, nvr_id, AlertType.CAMERA_OFFLINE, camera_id=ev.camera_id
+        )
         if had_alert:
             await _create_alert(
                 session,
                 nvr_id=nvr_id,
+                camera_id=ev.camera_id,
                 alert_type=AlertType.CAMERA_RECOVERED,
                 severity=AlertSeverity.INFO,
-                message=f"NVR '{nvr_name}': camera đã online trở lại.",
+                message=(
+                    f"NVR '{nvr_name}' — Camera {_camera_label(ev)} "
+                    f"đã online trở lại."
+                ),
                 is_event=True,
             )

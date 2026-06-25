@@ -18,7 +18,11 @@ from app.db.base import Base
 from app.db.models import Alert
 from app.enums import AlertStatus, AlertType, NVRStatus
 from app.services import alert_service
-from app.services.status_service import NVRHealthOutcome
+from app.services.status_service import (
+    CameraEvent,
+    CameraScanOutcome,
+    NVRHealthOutcome,
+)
 from app.services.telegram_notifier import _QUEUE_KEY
 
 
@@ -84,8 +88,14 @@ def test_recovery_queues_telegram_every_time():
     settings.telegram_enabled = False
 
 
-def test_camera_recovery_notifies_only_after_offline_alert():
-    """Camera online lại chỉ báo Telegram khi trước đó đang có alert offline mở."""
+def _scan(offline=(), recovered=()):
+    return CameraScanOutcome(
+        ok=True, offline_alertable=list(offline), recovered=list(recovered)
+    )
+
+
+def test_camera_recovery_notifies_per_camera_only_after_offline_alert():
+    """Recovery camera báo chi tiết (kênh/tên) và chỉ khi trước đó có alert offline mở."""
     settings = get_settings()
     settings.telegram_enabled = True
 
@@ -93,26 +103,35 @@ def test_camera_recovery_notifies_only_after_offline_alert():
         engine, Session = await _make_session()
         async with Session() as session:
             nvr_id = 1
+            cam = CameraEvent(camera_id=10, channel_no=3, name="Cổng chính")
 
-            # Quét bình thường (0 camera offline) khi chưa từng có alert -> không báo.
-            await alert_service.process_camera_alerts(session, nvr_id, "NVR-A", 0)
+            # Quét bình thường (không có sự kiện) -> không báo.
+            await alert_service.process_camera_alerts(session, nvr_id, "NVR-A", _scan())
             assert not session.info.get(_QUEUE_KEY)
 
-            # Có camera offline đủ lâu -> tạo alert offline (xếp hàng cảnh báo).
-            await alert_service.process_camera_alerts(session, nvr_id, "NVR-A", 2)
+            # Camera offline đủ lâu -> alert offline chi tiết (có kênh + tên).
+            await alert_service.process_camera_alerts(
+                session, nvr_id, "NVR-A", _scan(offline=[cam])
+            )
+            offline_q = list(session.info.get(_QUEUE_KEY, []))
+            assert any("kênh 3" in t and "Cổng chính" in t for t in offline_q)
             session.info.pop(_QUEUE_KEY, None)  # mô phỏng flush
 
-            # Camera online lại -> resolve + báo recovery.
-            await alert_service.process_camera_alerts(session, nvr_id, "NVR-A", 0)
+            # Camera online lại -> resolve + báo recovery chi tiết.
+            await alert_service.process_camera_alerts(
+                session, nvr_id, "NVR-A", _scan(recovered=[cam])
+            )
             queue = list(session.info.get(_QUEUE_KEY, []))
-            assert any("online trở lại" in t for t in queue)
+            assert any("kênh 3" in t and "online trở lại" in t for t in queue)
 
-            # Quét tiếp vẫn 0 offline (đã hết alert mở) -> không báo lại, tránh spam.
+            # Recovery lần nữa khi đã hết alert mở -> không báo lại, tránh spam.
             session.info.pop(_QUEUE_KEY, None)
-            await alert_service.process_camera_alerts(session, nvr_id, "NVR-A", 0)
+            await alert_service.process_camera_alerts(
+                session, nvr_id, "NVR-A", _scan(recovered=[cam])
+            )
             assert not session.info.get(_QUEUE_KEY)
 
-            # Alert recovery camera ghi RESOLVED, không treo OPEN.
+            # Alert recovery camera ghi RESOLVED, gắn đúng camera_id, không treo OPEN.
             rows = (
                 await session.execute(
                     select(Alert).where(
@@ -122,6 +141,7 @@ def test_camera_recovery_notifies_only_after_offline_alert():
             ).scalars().all()
             assert len(rows) == 1
             assert rows[0].status == AlertStatus.RESOLVED.value
+            assert rows[0].camera_id == 10
         await engine.dispose()
 
     asyncio.run(run())

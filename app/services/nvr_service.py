@@ -90,7 +90,7 @@ async def check_nvr_now(session: AsyncSession, nvr_id: int) -> bool:
         # Fetch camera lỗi (ok=False) -> giữ nguyên alert, không resolve nhầm.
         if cam_outcome.ok:
             await process_camera_alerts(
-                session, nvr_id, nvr_name, cam_outcome.alertable_offline
+                session, nvr_id, nvr_name, cam_outcome
             )
     await session.commit()
     await flush_telegram_notifications(session)

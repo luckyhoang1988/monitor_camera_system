@@ -77,7 +77,7 @@ async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                 # -> giữ nguyên alert/offline_since để tránh resolve nhầm khi timeout.
                 if outcome.ok:
                     await process_camera_alerts(
-                        session, nvr_id, nvr_name, outcome.alertable_offline
+                        session, nvr_id, nvr_name, outcome
                     )
                 await session.commit()
                 await flush_telegram_notifications(session)

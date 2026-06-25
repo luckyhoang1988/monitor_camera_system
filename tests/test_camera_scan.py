@@ -20,7 +20,11 @@ from app.db.models import Alert, CameraChannel, NVRDevice
 from app.enums import AlertStatus, AlertType, CameraStatus, NVRStatus
 from app.services import status_service
 from app.services.alert_service import process_camera_alerts
-from app.services.status_service import _update_cameras, update_nvr_cameras
+from app.services.status_service import (
+    CameraScanOutcome,
+    _update_cameras,
+    update_nvr_cameras,
+)
 
 
 async def _make_session():
@@ -104,7 +108,7 @@ def test_fetch_timeout_keeps_alert_and_offline_since(monkeypatch):
             outcome = await update_nvr_cameras(session, nvr, timeout=5)
 
             assert outcome.ok is False
-            assert outcome.alertable_offline == 0
+            assert outcome.offline_alertable == []
             # Scheduler chỉ gọi process_camera_alerts khi ok=True -> ở đây KHÔNG gọi.
             await session.commit()
 
@@ -129,7 +133,7 @@ def test_empty_channels_is_not_ok(monkeypatch):
             _patch_fetch(monkeypatch, channels=[], error=None)
             outcome = await update_nvr_cameras(session, nvr, timeout=5)
             assert outcome.ok is False
-            assert outcome.alertable_offline == 0
+            assert outcome.offline_alertable == []
         await engine.dispose()
 
     asyncio.run(run())
@@ -152,17 +156,30 @@ def test_recovery_resolves_alert(monkeypatch):
             cam.offline_since = datetime.now(timezone.utc) - timedelta(hours=1)
             await session.flush()
 
-            alertable = await _update_cameras(session, nvr.id, ch_off)
-            assert alertable == 1
-            await process_camera_alerts(session, nvr.id, nvr.name, alertable)
+            offline, recovered = await _update_cameras(session, nvr.id, ch_off)
+            assert len(offline) == 1 and recovered == []
+            assert offline[0].channel_no == 1
+            await process_camera_alerts(
+                session,
+                nvr.id,
+                nvr.name,
+                CameraScanOutcome(ok=True, offline_alertable=offline, recovered=recovered),
+            )
             await session.commit()
-            assert len(await _open_alerts(session)) == 1
+            open_alerts = await _open_alerts(session)
+            assert len(open_alerts) == 1
+            assert open_alerts[0].camera_id == cam.id  # alert gắn đúng camera
 
-            # Camera lên lại -> alertable=0 -> resolve.
+            # Camera lên lại -> recovered=[camera] -> resolve + báo recovery.
             ch_on = [ChannelInfo(channel_no=1, raw_status="online")]
-            alertable2 = await _update_cameras(session, nvr.id, ch_on)
-            assert alertable2 == 0
-            await process_camera_alerts(session, nvr.id, nvr.name, alertable2)
+            offline2, recovered2 = await _update_cameras(session, nvr.id, ch_on)
+            assert offline2 == [] and len(recovered2) == 1
+            await process_camera_alerts(
+                session,
+                nvr.id,
+                nvr.name,
+                CameraScanOutcome(ok=True, offline_alertable=offline2, recovered=recovered2),
+            )
             await session.commit()
 
             cam_row = await session.get(CameraChannel, cam.id)
@@ -250,7 +267,7 @@ def test_nat_half_open_no_alert_flapping(monkeypatch):
                 assert outcome.ok is False
                 if outcome.ok:  # mô phỏng đúng guard ở scheduler
                     await process_camera_alerts(
-                        session, nvr.id, nvr.name, outcome.alertable_offline
+                        session, nvr.id, nvr.name, outcome
                     )
                 await session.commit()
 
