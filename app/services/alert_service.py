@@ -72,8 +72,16 @@ async def _create_alert(
     alert_type: AlertType,
     severity: AlertSeverity,
     message: str,
+    is_event: bool = False,
 ) -> None:
-    if await _has_open_alert(session, nvr_id, alert_type):
+    """Tạo alert + xếp hàng Telegram.
+
+    `is_event=True` cho các thông báo tức thời (vd: recovery): bỏ qua dedupe
+    theo alert OPEN và ghi thẳng RESOLVED — vì đây là sự kiện, không phải trạng
+    thái lỗi kéo dài. Nếu giữ OPEN + dedupe thì từ lần recovery thứ 2 trở đi sẽ
+    bị chặn, không đẩy được Telegram.
+    """
+    if not is_event and await _has_open_alert(session, nvr_id, alert_type):
         return
     logger.info(
         "Tạo alert %s (%s) cho NVR %s: %s",
@@ -88,6 +96,10 @@ async def _create_alert(
             severity=severity.value,
             nvr_id=nvr_id,
             message=message,
+            status=(
+                AlertStatus.RESOLVED.value if is_event else AlertStatus.OPEN.value
+            ),
+            resolved_at=datetime.now(timezone.utc) if is_event else None,
         )
     )
     # Xếp hàng đẩy lên Telegram; gửi thật sau khi commit (xem flush ở call site).
@@ -131,6 +143,7 @@ async def process_nvr_alerts(
             alert_type=AlertType.NVR_RECOVERED,
             severity=AlertSeverity.INFO,
             message=f"NVR '{nvr_name}' đã online trở lại.",
+            is_event=True,
         )
 
     # 4. Phản hồi chậm.
