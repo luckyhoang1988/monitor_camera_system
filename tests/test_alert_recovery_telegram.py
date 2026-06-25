@@ -146,3 +146,45 @@ def test_camera_recovery_notifies_per_camera_only_after_offline_alert():
 
     asyncio.run(run())
     settings.telegram_enabled = False
+
+
+def test_camera_alerts_grouped_into_single_message_per_cycle():
+    """Nhiều camera cùng NVR rớt/lên trong 1 chu kỳ -> gộp thành 1 tin liệt kê kênh."""
+    settings = get_settings()
+    settings.telegram_enabled = True
+
+    async def run():
+        engine, Session = await _make_session()
+        async with Session() as session:
+            nvr_id = 1
+            cams = [
+                CameraEvent(camera_id=10, channel_no=3, name="Cổng chính"),
+                CameraEvent(camera_id=11, channel_no=5, name="Bãi xe"),
+                CameraEvent(camera_id=12, channel_no=7, name=None),
+            ]
+
+            # 3 camera offline cùng lúc -> đúng 1 tin nhắn, liệt kê cả 3 kênh.
+            await alert_service.process_camera_alerts(
+                session, nvr_id, "NVR-A", _scan(offline=cams)
+            )
+            offline_q = list(session.info.get(_QUEUE_KEY, []))
+            assert len(offline_q) == 1
+            msg = offline_q[0]
+            assert "3 camera" in msg
+            assert "kênh 3 (Cổng chính)" in msg
+            assert "kênh 5 (Bãi xe)" in msg
+            assert "kênh 7" in msg
+            session.info.pop(_QUEUE_KEY, None)
+
+            # 3 camera online lại cùng lúc -> đúng 1 tin recovery gộp.
+            await alert_service.process_camera_alerts(
+                session, nvr_id, "NVR-A", _scan(recovered=cams)
+            )
+            rec_q = list(session.info.get(_QUEUE_KEY, []))
+            assert len(rec_q) == 1
+            assert "3 camera đã online trở lại" in rec_q[0]
+            assert "kênh 5 (Bãi xe)" in rec_q[0]
+        await engine.dispose()
+
+    asyncio.run(run())
+    settings.telegram_enabled = False

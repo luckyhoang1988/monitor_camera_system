@@ -94,18 +94,23 @@ async def _create_alert(
     message: str,
     camera_id: int | None = None,
     is_event: bool = False,
-) -> None:
-    """Tạo alert + xếp hàng Telegram.
+    notify: bool = True,
+) -> bool:
+    """Tạo alert (kèm tùy chọn xếp hàng Telegram). Trả về True nếu thực sự tạo mới.
 
     `camera_id` -> alert cấp camera (dedupe theo camera). `is_event=True` cho các
     thông báo tức thời (vd: recovery): bỏ qua dedupe theo alert OPEN và ghi thẳng
     RESOLVED — vì đây là sự kiện, không phải trạng thái lỗi kéo dài. Nếu giữ OPEN
     + dedupe thì từ lần recovery thứ 2 trở đi sẽ bị chặn, không đẩy được Telegram.
+
+    `notify=False`: chỉ ghi alert vào DB, KHÔNG tự xếp Telegram — dùng khi caller
+    muốn gộp nhiều alert thành một tin nhắn (xem `process_camera_alerts`). Trả về
+    True/False để caller biết alert nào mới để đưa vào tin gộp.
     """
     if not is_event and await _has_open_alert(
         session, nvr_id, alert_type, camera_id=camera_id
     ):
-        return
+        return False
     logger.info(
         "Tạo alert %s (%s) cho NVR %s camera %s: %s",
         alert_type.value,
@@ -128,7 +133,9 @@ async def _create_alert(
         )
     )
     # Xếp hàng đẩy lên Telegram; gửi thật sau khi commit (xem flush ở call site).
-    queue_alert(session, severity=severity.value, message=message)
+    if notify:
+        queue_alert(session, severity=severity.value, message=message)
+    return True
 
 
 async def process_nvr_alerts(
@@ -199,24 +206,38 @@ def _camera_label(event: CameraEvent) -> str:
     return label
 
 
+def _group_message(nvr_name: str, events: list[CameraEvent], suffix: str) -> str:
+    """Gộp nhiều camera cùng NVR thành 1 nội dung liệt kê danh sách kênh.
+
+    Vd: "NVR 'Khu A' — 3 camera offline quá 10 phút:\n• kênh 3 (Cổng chính)\n..."
+    """
+    lines = "\n".join(f"• {_camera_label(ev)}" for ev in events)
+    return f"NVR '{nvr_name}' — {len(events)} camera {suffix}:\n{lines}"
+
+
 async def process_camera_alerts(
     session: AsyncSession,
     nvr_id: int,
     nvr_name: str,
     outcome: CameraScanOutcome,
 ) -> None:
-    """Tạo/resolve alert offline + báo recovery THEO TỪNG CAMERA (kênh nào, tên gì).
+    """Tạo/resolve alert offline + recovery THEO TỪNG CAMERA, gộp Telegram theo NVR.
 
-    Gọi ở job camera cho NVR đang Online:
-    - `outcome.offline_alertable`: từng camera offline đủ lâu -> alert riêng (dedupe
-      theo camera_id nên mỗi camera chỉ báo 1 lần tới khi hồi phục).
-    - `outcome.recovered`: từng camera vừa online lại -> resolve alert của camera đó
-      và báo recovery (chỉ khi trước đó thực sự có alert offline mở, tránh spam blip).
+    Gọi ở job camera cho NVR đang Online. Alert ghi vào DB vẫn CHI TIẾT từng camera
+    (trang Cảnh báo thấy kênh nào, tên gì), nhưng Telegram được GỘP: mỗi chu kỳ chỉ
+    1 tin cho nhóm camera vừa offline và 1 tin cho nhóm vừa online lại — tránh spam
+    khi nhiều camera cùng NVR rớt/lên một lúc.
+    - `outcome.offline_alertable`: camera offline đủ lâu -> alert riêng (dedupe theo
+      camera_id). Chỉ những camera MỚI báo lần này mới đưa vào tin gộp.
+    - `outcome.recovered`: camera vừa online lại -> resolve alert camera đó + báo
+      recovery (chỉ khi trước đó thực sự có alert offline mở, tránh spam blip).
     """
     settings = get_settings()
 
+    # Offline: tạo alert từng camera (im lặng), gom các camera MỚI báo -> 1 tin.
+    newly_offline: list[CameraEvent] = []
     for ev in outcome.offline_alertable:
-        await _create_alert(
+        created = await _create_alert(
             session,
             nvr_id=nvr_id,
             camera_id=ev.camera_id,
@@ -226,8 +247,23 @@ async def process_camera_alerts(
                 f"NVR '{nvr_name}' — Camera {_camera_label(ev)} offline "
                 f"quá {settings.camera_offline_alert_min} phút."
             ),
+            notify=False,
+        )
+        if created:
+            newly_offline.append(ev)
+    if newly_offline:
+        queue_alert(
+            session,
+            severity=AlertSeverity.WARNING.value,
+            message=_group_message(
+                nvr_name,
+                newly_offline,
+                f"offline quá {settings.camera_offline_alert_min} phút",
+            ),
         )
 
+    # Recovery: resolve + alert sự kiện từng camera (im lặng), gom kênh -> 1 tin.
+    recovered_now: list[CameraEvent] = []
     for ev in outcome.recovered:
         had_alert = await _has_open_alert(
             session, nvr_id, AlertType.CAMERA_OFFLINE, camera_id=ev.camera_id
@@ -247,4 +283,12 @@ async def process_camera_alerts(
                     f"đã online trở lại."
                 ),
                 is_event=True,
+                notify=False,
             )
+            recovered_now.append(ev)
+    if recovered_now:
+        queue_alert(
+            session,
+            severity=AlertSeverity.INFO.value,
+            message=_group_message(nvr_name, recovered_now, "đã online trở lại"),
+        )
