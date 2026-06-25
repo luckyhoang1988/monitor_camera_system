@@ -58,6 +58,14 @@
         <tr><th>Còn trống</th><td>{{ (nvr.storage_free_mb / 1024) | round(1) }} GB</td></tr>
         <tr><th>Số ổ</th><td>{{ nvr.hdd_healthy_count if nvr.hdd_healthy_count is not none else "?" }}/{{ nvr.hdd_count if nvr.hdd_count is not none else "?" }} bình thường</td></tr>
         {% if nvr.raid_status %}<tr><th>RAID</th><td>{{ nvr.raid_status }}</td></tr>{% endif %}
+        {% if nvr.retention_days_est %}
+        <tr><th>Dự kiến lưu trữ</th>
+          <td><span class="fw-semibold">~{{ nvr.retention_days_est }} ngày</span>
+            <span class="text-muted small d-block">ước tính theo ghi liên tục 24/7</span></td></tr>
+        {% endif %}
+        {% if nvr.record_bitrate_kbps %}
+        <tr><th>Tổng bitrate ghi</th><td>{{ (nvr.record_bitrate_kbps / 1000) | round(1) }} Mbps</td></tr>
+        {% endif %}
         <tr><th>Quét cuối</th><td>{{ nvr.storage_last_checked_at | localtime }}</td></tr>
         {% if nvr.storage_last_error %}<tr><th>Lỗi</th><td class="text-danger">{{ nvr.storage_last_error }}</td></tr>{% endif %}
       </table>

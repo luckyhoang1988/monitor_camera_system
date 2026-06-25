@@ -19,7 +19,7 @@ from app.collector.checker import (
     fetch_nvr_channels,
     fetch_nvr_storage,
 )
-from app.collector.storage_checker import evaluate_storage
+from app.collector.storage_checker import estimate_retention_days, evaluate_storage
 from app.config import get_settings
 from app.db.models import (
     CameraChannel,
@@ -254,9 +254,7 @@ class StorageScanOutcome:
     ok: bool
     prev_status: StorageStatus
     new_status: StorageStatus
-    used_pct: float | None = None
     has_disk_error: bool = False
-    is_full_critical: bool = False
     reason: str | None = None  # mô tả gộp lý do (để dựng nội dung alert)
     # True nếu trạng thái lưu trữ đổi so với lần trước -> báo UI re-fetch qua SSE.
     changed: bool = False
@@ -267,8 +265,6 @@ async def update_nvr_storage(
     nvr: NVRDevice,
     *,
     timeout: int,
-    warn_pct: int,
-    crit_pct: int,
     temp_warn_c: int,
 ) -> StorageScanOutcome:
     """Quét + cập nhật sức khỏe lưu trữ của 1 NVR (job storage; gọi cho NVR Online).
@@ -305,9 +301,7 @@ async def update_nvr_storage(
             ok=False, prev_status=prev_status, new_status=prev_status
         )
 
-    ev = evaluate_storage(
-        storage, warn_pct=warn_pct, crit_pct=crit_pct, temp_warn_c=temp_warn_c
-    )
+    ev = evaluate_storage(storage, temp_warn_c=temp_warn_c)
     now = _now()
 
     # Upsert hàng nvr_hdd theo (nvr_id, hdd_id).
@@ -339,6 +333,11 @@ async def update_nvr_storage(
     nvr.hdd_count = ev.hdd_count
     nvr.hdd_healthy_count = ev.hdd_healthy_count
     nvr.raid_status = ev.raid_status
+    # Dự đoán số ngày lưu trữ từ dung lượng + tổng bitrate ghi (best-effort).
+    nvr.record_bitrate_kbps = storage.total_bitrate_kbps
+    nvr.retention_days_est = estimate_retention_days(
+        ev.total_mb, storage.total_bitrate_kbps
+    )
     nvr.storage_last_checked_at = now
     nvr.storage_last_error = None
 
@@ -374,9 +373,7 @@ async def update_nvr_storage(
         ok=True,
         prev_status=prev_status,
         new_status=ev.overall,
-        used_pct=ev.used_pct,
         has_disk_error=ev.has_disk_error,
-        is_full_critical=ev.is_full_critical,
         reason=reason,
         changed=changed,
     )

@@ -47,6 +47,8 @@ class NVRRead(NVRBase):
     hdd_count: int | None = None
     hdd_healthy_count: int | None = None
     raid_status: str | None = None
+    record_bitrate_kbps: int | None = None
+    retention_days_est: float | None = None
     storage_last_checked_at: datetime | None = None
     storage_last_error: str | None = None
 

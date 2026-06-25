@@ -310,13 +310,16 @@ async def process_storage_alerts(
 ) -> None:
     """Tạo/resolve alert lưu trữ (ổ lỗi / dung lượng đầy / hồi phục) theo chuyển trạng thái.
 
-    Tái dùng nguyên helper dedupe/resolve. Hai loại alert riêng để phân biệt nguyên nhân:
+    Tái dùng nguyên helper dedupe/resolve. CHỈ báo sự cố THẬT — KHÔNG báo đĩa đầy:
+    NVR ghi đè (circular) nên đĩa đầy là bình thường (xem evaluate_storage).
     - `HDD_ERROR` (CRITICAL): ổ error/unformatted hoặc không ghi được hình.
-    - `HDD_FULL`: dung lượng vượt ngưỡng (CRITICAL khi >= crit_pct, WARNING khi >= warn_pct).
-    Khi lưu trữ về Healthy -> resolve cả hai + báo sự kiện `STORAGE_RECOVERED`.
+    Khi lưu trữ về Healthy -> resolve + báo sự kiện `STORAGE_RECOVERED`.
     Chỉ gọi khi `outcome.ok` (dữ liệu tin cậy) — caller đã đảm bảo.
     """
     reason = outcome.reason or ""
+
+    # Dọn các alert dung lượng (HDD_FULL) tạo trước khi bỏ tính năng — không báo nữa.
+    await _resolve_open_alerts(session, nvr_id, AlertType.HDD_FULL)
 
     # 1. Ổ lỗi / mất ghi hình.
     if outcome.has_disk_error:
@@ -330,27 +333,7 @@ async def process_storage_alerts(
     else:
         await _resolve_open_alerts(session, nvr_id, AlertType.HDD_ERROR)
 
-    # 2. Dung lượng theo ngưỡng.
-    if outcome.new_status == StorageStatus.CRITICAL and outcome.is_full_critical:
-        await _create_alert(
-            session,
-            nvr_id=nvr_id,
-            alert_type=AlertType.HDD_FULL,
-            severity=AlertSeverity.CRITICAL,
-            message=f"NVR '{nvr_name}' — dung lượng tới hạn: {reason}.",
-        )
-    elif outcome.new_status == StorageStatus.WARNING and outcome.used_pct is not None:
-        await _create_alert(
-            session,
-            nvr_id=nvr_id,
-            alert_type=AlertType.HDD_FULL,
-            severity=AlertSeverity.WARNING,
-            message=f"NVR '{nvr_name}' — cảnh báo lưu trữ: {reason}.",
-        )
-    elif outcome.new_status == StorageStatus.HEALTHY:
-        await _resolve_open_alerts(session, nvr_id, AlertType.HDD_FULL)
-
-    # 3. Hồi phục: vừa từ trạng thái lỗi/cảnh báo trở lại Healthy.
+    # 2. Hồi phục: vừa từ trạng thái lỗi/cảnh báo trở lại Healthy.
     if (
         outcome.new_status == StorageStatus.HEALTHY
         and outcome.prev_status in (StorageStatus.WARNING, StorageStatus.CRITICAL)

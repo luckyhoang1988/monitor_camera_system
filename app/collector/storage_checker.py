@@ -1,7 +1,11 @@
 """Chuẩn hóa sức khỏe lưu trữ NVR từ dữ liệu ISAPI Storage (xem CLAUDE.md).
 
 Tách phần logic thuần (không I/O) ra đây để test bằng mock dễ dàng: cho 1 `StorageInfo`
-+ các ngưỡng -> ra `StorageEvaluation` (trạng thái tổng hợp + số liệu để ghi log/alert).
++ ngưỡng nhiệt độ -> ra `StorageEvaluation` (trạng thái tổng hợp + số liệu để ghi log/alert).
+
+LƯU Ý: NVR ghi đè (circular recording) nên ĐĨA ĐẦY LÀ BÌNH THƯỜNG, không phải sự cố.
+Vì vậy %dung lượng KHÔNG quyết định trạng thái Warning/Critical (chỉ để hiển thị). Trạng
+thái chỉ phản ánh hỏng hóc thật: ổ error/chưa format, mất ghi hình, RAID suy giảm, nhiệt độ.
 """
 
 from __future__ import annotations
@@ -26,14 +30,13 @@ class StorageEvaluation:
     overall: StorageStatus
     total_mb: int
     free_mb: int
-    used_pct: float | None
+    used_pct: float | None  # chỉ để hiển thị, KHÔNG quyết định trạng thái
     hdd_count: int
     hdd_healthy_count: int
     hdd_error_count: int
     raid_status: str | None
-    # Cờ chi tiết để alert giải thích nguyên nhân.
+    # Cờ chi tiết để alert giải thích nguyên nhân (đầy KHÔNG còn là lỗi).
     has_disk_error: bool = False  # ổ error/unformatted hoặc có ổ không ghi được
-    is_full_critical: bool = False  # %dùng >= crit_pct
     reasons: list[str] = field(default_factory=list)
 
 
@@ -50,17 +53,14 @@ def _is_ok(status: str | None) -> bool:
 def evaluate_storage(
     storage: StorageInfo,
     *,
-    warn_pct: int,
-    crit_pct: int,
     temp_warn_c: int,
 ) -> StorageEvaluation:
-    """Map StorageInfo -> StorageEvaluation theo ngưỡng %dùng/nhiệt độ/RAID.
+    """Map StorageInfo -> StorageEvaluation. %dung lượng KHÔNG ảnh hưởng trạng thái.
 
     Quy tắc (ưu tiên Critical > Warning > Healthy):
-    - Critical: có ổ error/unformatted, hoặc KHÔNG ổ nào đang ghi (mất ghi hình),
-      hoặc %dùng >= crit_pct.
-    - Warning : %dùng >= warn_pct, hoặc RAID degraded, hoặc nhiệt độ ổ >= temp_warn_c.
-    - Healthy : còn lại (và có ít nhất 1 ổ).
+    - Critical: có ổ error/unformatted, hoặc KHÔNG ổ nào đang ghi (mất ghi hình).
+    - Warning : RAID degraded, hoặc nhiệt độ ổ >= temp_warn_c.
+    - Healthy : còn lại (kể cả khi đĩa đã đầy — NVR ghi đè là bình thường).
     - Unknown : không có ổ nào (NVR không gắn ổ / chưa đọc được).
     """
     hdds: list[HddInfo] = storage.hdds
@@ -86,7 +86,6 @@ def evaluate_storage(
 
     reasons: list[str] = []
     has_disk_error = bool(error_hdds) or none_recording
-    is_full_critical = used_pct is not None and used_pct >= crit_pct
 
     if hdd_count == 0:
         return StorageEvaluation(
@@ -101,7 +100,7 @@ def evaluate_storage(
             reasons=["NVR không có ổ cứng hoặc không đọc được danh sách ổ"],
         )
 
-    # --- Critical ---
+    # --- Critical (hỏng thật) ---
     if error_hdds:
         reasons.append(
             f"{len(error_hdds)} ổ lỗi: "
@@ -109,16 +108,12 @@ def evaluate_storage(
         )
     if none_recording:
         reasons.append("không ổ nào đang ghi hình (R/W)")
-    if is_full_critical:
-        reasons.append(f"dung lượng đã dùng {used_pct}% ≥ {crit_pct}%")
 
-    if has_disk_error or is_full_critical:
+    if has_disk_error:
         overall = StorageStatus.CRITICAL
     else:
-        # --- Warning ---
+        # --- Warning (RAID/nhiệt độ) — KHÔNG tính %đầy ---
         warn_reasons: list[str] = []
-        if used_pct is not None and used_pct >= warn_pct:
-            warn_reasons.append(f"dung lượng đã dùng {used_pct}% ≥ {warn_pct}%")
         if raid_bad:
             warn_reasons.append(f"RAID {storage.raid_status}")
         if hot_hdds:
@@ -142,6 +137,22 @@ def evaluate_storage(
         hdd_error_count=hdd_error_count,
         raid_status=storage.raid_status,
         has_disk_error=has_disk_error,
-        is_full_critical=is_full_critical,
         reasons=reasons,
     )
+
+
+def estimate_retention_days(
+    total_capacity_mb: int | None,
+    total_bitrate_kbps: int | None,
+) -> float | None:
+    """Dự đoán số ngày lưu trữ từ dung lượng ổ + tổng bitrate ghi (ghi liên tục 24/7).
+
+    Công thức: ngày ≈ dung lượng(MB) × 8000 / (bitrate(kbps) × 86400).
+    - 8000 = ×8 bit/byte × (10^6 byte/MB ÷ 10^3 bit/kbit).
+    - Giả định ghi LIÊN TỤC (worst-case). Ghi theo chuyển động sẽ lưu được lâu hơn.
+    Trả None nếu thiếu dữ liệu (không đọc được bitrate hoặc dung lượng = 0).
+    """
+    if not total_capacity_mb or not total_bitrate_kbps:
+        return None
+    days = total_capacity_mb * 8000 / (total_bitrate_kbps * 86400)
+    return round(days, 1)

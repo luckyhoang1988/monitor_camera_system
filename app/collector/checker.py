@@ -239,6 +239,13 @@ async def fetch_nvr_storage(
             await _assert_fingerprint(host, port, tls_fingerprint, timeout)
         client = await get_client(client_obj.base_url)
         storage = await client_obj.get_storage_info(client)
+        # Tổng bitrate ghi (best-effort) để dự đoán số ngày lưu — lỗi thì bỏ qua.
+        try:
+            storage.total_bitrate_kbps = await client_obj.get_record_bitrate_kbps(
+                client
+            )
+        except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError):
+            pass
         return storage, None
     except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
         return None, str(exc)

@@ -3,11 +3,21 @@
 import asyncio
 
 import httpx
-import pytest
 
 from app.collector.isapi_client import ISAPIClient, StorageInfo
-from app.collector.storage_checker import evaluate_storage
+from app.collector.storage_checker import estimate_retention_days, evaluate_storage
 from app.enums import StorageStatus
+
+NS_STREAM = "http://www.hikvision.com/ver20/XMLSchema"
+
+# 2 camera: main stream (id 101, 201) có vbrUpperCap; sub stream (102) phải bị bỏ qua.
+STREAMING_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
+<StreamingChannelList xmlns="{NS_STREAM}">
+  <StreamingChannel><id>101</id><Video><vbrUpperCap>4096</vbrUpperCap></Video></StreamingChannel>
+  <StreamingChannel><id>102</id><Video><vbrUpperCap>1024</vbrUpperCap></Video></StreamingChannel>
+  <StreamingChannel><id>201</id><Video><constantBitRate>2048</constantBitRate></Video></StreamingChannel>
+</StreamingChannelList>
+"""
 
 NS = "http://www.hikvision.com/ver20/XMLSchema"
 
@@ -53,7 +63,7 @@ class _FakeResp:
 
 
 class _PathClient:
-    """Giả lập httpx.AsyncClient.get: trả XML cho /Storage, 404 cho endpoint S.M.A.R.T."""
+    """Giả lập httpx.AsyncClient.get: /Storage + /Streaming/channels, 404 cho S.M.A.R.T."""
 
     def __init__(self):
         self.calls = []
@@ -62,6 +72,8 @@ class _PathClient:
         self.calls.append(path)
         if path == "/ISAPI/ContentMgmt/Storage":
             return _FakeResp(text=STORAGE_XML)
+        if path == "/ISAPI/Streaming/channels":
+            return _FakeResp(text=STREAMING_XML)
         # S.M.A.R.T không hỗ trợ -> 404 (get_storage_info phải nuốt lỗi này).
         return _FakeResp(status_code=404, text="<err/>")
 
@@ -101,11 +113,9 @@ def _hdd(hdd_id, status="ok", cap=1000, free=500, rec=True, temp=None):
     )
 
 
-def _eval(hdds, raid=None, warn=80, crit=90, temp=55):
+def _eval(hdds, raid=None, temp=55):
     return evaluate_storage(
         StorageInfo(hdds=hdds, raid_status=raid),
-        warn_pct=warn,
-        crit_pct=crit,
         temp_warn_c=temp,
     )
 
@@ -125,16 +135,11 @@ def test_evaluate_critical_on_disk_error():
     assert ev.hdd_error_count == 1
 
 
-def test_evaluate_critical_on_full():
-    ev = _eval([_hdd(1, cap=1000, free=50)])  # 95% dùng
-    assert ev.overall == StorageStatus.CRITICAL
-    assert ev.is_full_critical is True
-
-
-def test_evaluate_warning_on_used_pct():
-    ev = _eval([_hdd(1, cap=1000, free=150)])  # 85% dùng
-    assert ev.overall == StorageStatus.WARNING
-    assert ev.is_full_critical is False
+def test_evaluate_full_disk_is_healthy():
+    # NVR ghi đè -> đĩa đầy 95% vẫn HEALTHY, KHÔNG còn là Critical.
+    ev = _eval([_hdd(1, cap=1000, free=50)])
+    assert ev.overall == StorageStatus.HEALTHY
+    assert ev.used_pct == 95.0  # vẫn hiển thị %
 
 
 def test_evaluate_warning_on_raid_degraded():
@@ -164,3 +169,20 @@ def test_evaluate_ignores_recording_when_property_unknown():
     # Firmware không báo property (is_recording=None) -> KHÔNG kết luận mất ghi hình.
     ev = _eval([_hdd(1, rec=None, free=900)])
     assert ev.overall == StorageStatus.HEALTHY
+
+
+def test_get_record_bitrate_sums_main_streams_only():
+    # Main stream 101 (vbrUpperCap 4096) + 201 (constantBitRate 2048) = 6144;
+    # sub stream 102 (kết thúc '02') bị bỏ qua.
+    kbps = asyncio.run(_client().get_record_bitrate_kbps(_PathClient()))
+    assert kbps == 4096 + 2048
+
+
+def test_estimate_retention_days():
+    # 4 TB (~3,815,447 MB) với 64 Mbps (64000 kbps) -> ~5.5 ngày ghi liên tục.
+    days = estimate_retention_days(3_815_447, 64_000)
+    assert 5.0 < days < 6.0
+    # Thiếu dữ liệu -> None.
+    assert estimate_retention_days(None, 64_000) is None
+    assert estimate_retention_days(1000, None) is None
+    assert estimate_retention_days(1000, 0) is None

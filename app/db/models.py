@@ -72,6 +72,9 @@ class NVRDevice(Base):
     hdd_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hdd_healthy_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     raid_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Dự đoán số ngày lưu trữ = dung lượng / tổng bitrate ghi (ghi liên tục 24/7).
+    record_bitrate_kbps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retention_days_est: Mapped[float | None] = mapped_column(Float, nullable=True)
     storage_last_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

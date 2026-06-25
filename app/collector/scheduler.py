@@ -217,8 +217,6 @@ async def _storage_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                     session,
                     nvr,
                     timeout=settings.request_timeout,
-                    warn_pct=settings.disk_warn_pct,
-                    crit_pct=settings.disk_crit_pct,
                     temp_warn_c=settings.hdd_temp_warn_c,
                 )
                 if outcome.ok:

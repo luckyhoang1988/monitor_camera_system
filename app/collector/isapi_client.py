@@ -125,10 +125,12 @@ class HddInfo:
 
 @dataclass
 class StorageInfo:
-    """Tổng hợp lưu trữ của 1 NVR: danh sách ổ + trạng thái RAID (nếu có)."""
+    """Tổng hợp lưu trữ của 1 NVR: danh sách ổ + RAID + tổng bitrate ghi (nếu có)."""
 
     hdds: list[HddInfo] = field(default_factory=list)
     raid_status: str | None = None  # None = không có RAID / không hỗ trợ
+    # Tổng bitrate main-stream của mọi camera (kbps) — để dự đoán số ngày lưu trữ.
+    total_bitrate_kbps: int | None = None
 
 
 @dataclass
@@ -307,6 +309,33 @@ class ISAPIClient:
                 smart, "selfEvaluation"
             )
             hdd.temperature_c = _to_int(_find_text(smart, "temperature"))
+
+    async def get_record_bitrate_kbps(
+        self, client: httpx.AsyncClient
+    ) -> int | None:
+        """Tổng bitrate ghi (kbps) = cộng bitrate main-stream của mọi camera.
+
+        /ISAPI/Streaming/channels -> nhiều <StreamingChannel>; main stream có id kết
+        thúc '01' (vd 101=kênh 1 main, 102=sub). Bitrate trong <Video>: ưu tiên
+        constantBitRate (CBR), nếu không có/0 thì vbrUpperCap (VBR max — ước lượng
+        thận trọng). Trả None nếu không đọc được kênh nào (firmware/endpoint khác).
+        """
+        root = await self._get_xml(client, "/ISAPI/Streaming/channels")
+        total = 0
+        found = False
+        for ch in root.iter():
+            if local_name(ch.tag) != "StreamingChannel":
+                continue
+            cid = _find_text(ch, "id") or _find_text(ch, "channelID")
+            if cid is None or not cid.endswith("01"):
+                continue  # chỉ tính main stream
+            br = _to_int(_find_text(ch, "constantBitRate")) or _to_int(
+                _find_text(ch, "vbrUpperCap")
+            )
+            if br:
+                total += br
+                found = True
+        return total if found else None
 
 
 async def probe_nvr(
