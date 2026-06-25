@@ -4,6 +4,8 @@ Tài liệu nền tảng cho **Chek_NVR**: hệ thống kiểm tra, giám sát v
 
 > File này dành cho Claude Code (và lập trình viên) đọc trước khi làm việc trên dự án. Cập nhật khi kiến trúc/quy ước thay đổi.
 
+> ⚠️ **BẮT BUỘC — gọi skill `chek-nvr` TRƯỚC khi bắt đầu bất kỳ task nào** (sửa code, thêm tính năng, fix bug, deploy). Skill là playbook hành động (quy ước code, ISAPI, test, commit, quy trình deploy production + các quirk dễ sai): [.claude/skills/chek-nvr/SKILL.md](.claude/skills/chek-nvr/SKILL.md). CLAUDE.md là nền tảng kiến trúc; skill là checklist thực thi — đọc cả hai.
+
 ---
 
 ## 1. Mục tiêu
