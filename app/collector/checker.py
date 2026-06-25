@@ -23,6 +23,7 @@ from app.collector.isapi_client import (
     ISAPIAuthError,
     ISAPIClient,
     ISAPIError,
+    StorageInfo,
     get_cert_fingerprint,
     normalize_fingerprint,
 )
@@ -203,6 +204,44 @@ async def fetch_nvr_channels(
         return channels, None
     except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
         return [], str(exc)
+
+
+async def fetch_nvr_storage(
+    host: str,
+    username: str,
+    password: str,
+    port: int = 80,
+    use_https: bool = False,
+    timeout: int = 10,
+    *,
+    tls_fingerprint: str | None = None,
+    retries: int = 0,
+    retry_backoff_base: float = 0.5,
+) -> tuple[StorageInfo | None, str | None]:
+    """Chỉ lấy trạng thái lưu trữ (HDD/RAID/S.M.A.R.T) của NVR (job storage).
+
+    Song song với `fetch_nvr_channels`: dùng cho NVR đã Online, bỏ ping/port/deviceInfo
+    để giảm tải. Trả về `(storage, error)`; lỗi chỉ trả error để caller log, KHÔNG đổi
+    trạng thái NVR.
+    """
+    client_obj = ISAPIClient(
+        host,
+        username,
+        password,
+        port,
+        use_https,
+        timeout,
+        retries=retries,
+        retry_backoff_base=retry_backoff_base,
+    )
+    try:
+        if use_https and tls_fingerprint:
+            await _assert_fingerprint(host, port, tls_fingerprint, timeout)
+        client = await get_client(client_obj.base_url)
+        storage = await client_obj.get_storage_info(client)
+        return storage, None
+    except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
+        return None, str(exc)
 
 
 # --- State machine chống flapping (hàm thuần, dễ test) ---

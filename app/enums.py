@@ -31,6 +31,26 @@ class CameraStatus(str, Enum):
     UNKNOWN = "Unknown"
 
 
+class StorageStatus(str, Enum):
+    """Sức khỏe lưu trữ tổng hợp của 1 NVR (xem CLAUDE.md — giám sát phần cứng).
+
+    Map từ trạng thái từng ổ + %dùng + RAID + nhiệt độ:
+    - HEALTHY  : mọi ổ ok, đang ghi, %dùng < ngưỡng cảnh báo.
+    - WARNING  : %dùng >= disk_warn_pct, hoặc nhiệt độ cao, hoặc RAID degraded.
+    - CRITICAL : có ổ error/unformatted, không ghi được, hoặc %dùng >= disk_crit_pct.
+    - UNKNOWN  : NVR không Online / chưa quét được lưu trữ.
+    """
+
+    HEALTHY = "Healthy"
+    WARNING = "Warning"
+    CRITICAL = "Critical"
+    UNKNOWN = "Unknown"
+
+
+# Tập trạng thái lưu trữ coi là "có sự cố" — dùng để đếm/hiển thị + quyết định alert.
+STORAGE_BAD_STATES = frozenset({StorageStatus.WARNING, StorageStatus.CRITICAL})
+
+
 class AlertType(str, Enum):
     NVR_OFFLINE = "nvr_offline"
     CAMERA_OFFLINE = "camera_offline"
@@ -38,6 +58,10 @@ class AlertType(str, Enum):
     SLOW_RESPONSE = "slow_response"
     NVR_RECOVERED = "nvr_recovered"
     CAMERA_RECOVERED = "camera_recovered"
+    # Giám sát phần cứng lưu trữ
+    HDD_ERROR = "hdd_error"  # ổ lỗi/unformatted hoặc không ghi được hình
+    HDD_FULL = "hdd_full"  # dung lượng đã dùng vượt ngưỡng
+    STORAGE_RECOVERED = "storage_recovered"  # lưu trữ trở lại bình thường
 
 
 class AlertSeverity(str, Enum):

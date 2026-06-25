@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Alert, CameraStatusLog, NVRStatusLog
+from app.db.models import Alert, CameraStatusLog, NVRStatusLog, NVRStorageLog
 from app.enums import AlertStatus
 
 
@@ -25,11 +25,14 @@ class PurgeResult:
 
     nvr_logs: int = 0
     camera_logs: int = 0
+    storage_logs: int = 0
     resolved_alerts: int = 0
 
     @property
     def total(self) -> int:
-        return self.nvr_logs + self.camera_logs + self.resolved_alerts
+        return (
+            self.nvr_logs + self.camera_logs + self.storage_logs + self.resolved_alerts
+        )
 
 
 async def purge_old_logs(
@@ -52,6 +55,9 @@ async def purge_old_logs(
     cam_res = await session.execute(
         delete(CameraStatusLog).where(CameraStatusLog.checked_at < cutoff)
     )
+    storage_res = await session.execute(
+        delete(NVRStorageLog).where(NVRStorageLog.checked_at < cutoff)
+    )
     # Chỉ dọn alert đã đóng (resolved) và đã đóng trước cutoff. Alert đang open
     # luôn được giữ để không mất cảnh báo còn hiệu lực.
     alert_res = await session.execute(
@@ -65,6 +71,7 @@ async def purge_old_logs(
     return PurgeResult(
         nvr_logs=nvr_res.rowcount or 0,
         camera_logs=cam_res.rowcount or 0,
+        storage_logs=storage_res.rowcount or 0,
         resolved_alerts=alert_res.rowcount or 0,
     )
 

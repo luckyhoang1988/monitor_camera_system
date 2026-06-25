@@ -38,6 +38,34 @@
         <tr><th>Lỗi gần nhất</th><td>{{ nvr.last_error or "—" }}</td></tr>
       </table>
     </div></div>
+
+    {# Tóm tắt sức khỏe lưu trữ (job storage cập nhật). #}
+    <div class="card mb-3"><div class="card-body">
+      <h6 class="card-title">
+        Lưu trữ
+        <span class="badge text-bg-{{ nvr.storage_status | badge }}">{{ nvr.storage_status }}</span>
+      </h6>
+      {% if nvr.storage_total_mb %}
+      {% set used_pct = nvr.storage_used_pct or 0 %}
+      {% set bar = 'danger' if used_pct >= 90 else ('warning' if used_pct >= 80 else 'success') %}
+      <div class="progress mb-2" style="height: 18px;">
+        <div class="progress-bar bg-{{ bar }}" role="progressbar"
+             style="width: {{ used_pct }}%" aria-valuenow="{{ used_pct }}"
+             aria-valuemin="0" aria-valuemax="100">{{ used_pct }}%</div>
+      </div>
+      <table class="table table-sm mb-0">
+        <tr><th>Tổng dung lượng</th><td>{{ (nvr.storage_total_mb / 1024) | round(1) }} GB</td></tr>
+        <tr><th>Còn trống</th><td>{{ (nvr.storage_free_mb / 1024) | round(1) }} GB</td></tr>
+        <tr><th>Số ổ</th><td>{{ nvr.hdd_healthy_count if nvr.hdd_healthy_count is not none else "?" }}/{{ nvr.hdd_count if nvr.hdd_count is not none else "?" }} bình thường</td></tr>
+        {% if nvr.raid_status %}<tr><th>RAID</th><td>{{ nvr.raid_status }}</td></tr>{% endif %}
+        <tr><th>Quét cuối</th><td>{{ nvr.storage_last_checked_at | localtime }}</td></tr>
+        {% if nvr.storage_last_error %}<tr><th>Lỗi</th><td class="text-danger">{{ nvr.storage_last_error }}</td></tr>{% endif %}
+      </table>
+      {% else %}
+      <p class="text-muted mb-0">Chưa quét được dữ liệu lưu trữ
+        {% if nvr.storage_last_error %}({{ nvr.storage_last_error }}){% endif %}.</p>
+      {% endif %}
+    </div></div>
   </div>
 
   <div class="col-md-8">
@@ -80,7 +108,34 @@
       </table>
     </div></div>
 
-    <div class="card"><div class="card-body">
+    {# Trạng thái từng ổ cứng (job storage). #}
+    <div class="card mb-3"><div class="card-body">
+      <h6 class="card-title">Ổ cứng ({{ hdds | length }})</h6>
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr>
+          <th>Ổ</th><th>Tên</th><th>Dung lượng</th><th>Còn trống</th>
+          <th>Trạng thái</th><th>Ghi</th><th>S.M.A.R.T</th><th>Nhiệt độ</th>
+        </tr></thead>
+        <tbody>
+          {% for h in hdds %}
+          <tr>
+            <td>{{ h.hdd_id }}</td>
+            <td>{{ h.name or "—" }}</td>
+            <td>{{ (h.capacity_mb / 1024) | round(1) }} GB</td>
+            <td>{{ (h.free_mb / 1024) | round(1) if h.free_mb is not none else "—" }} GB</td>
+            <td>{{ h.status or "—" }}</td>
+            <td>{% if h.is_recording is none %}—{% elif h.is_recording %}✅{% else %}⛔{% endif %}</td>
+            <td>{{ h.smart_health or "—" }}</td>
+            <td>{{ h.temperature_c ~ "°C" if h.temperature_c is not none else "—" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-3">Chưa có dữ liệu ổ cứng.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+
+    <div class="card mb-3"><div class="card-body">
       <h6 class="card-title">Lịch sử trạng thái gần đây</h6>
       <table class="table table-sm mb-0">
         <thead class="table-light"><tr><th>Thời điểm</th><th>Trạng thái</th><th>Phản hồi (ms)</th><th>Lỗi</th></tr></thead>
@@ -94,6 +149,26 @@
           </tr>
           {% else %}
           <tr><td colspan="4" class="text-center text-muted py-3">Chưa có log.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+      <h6 class="card-title">Lịch sử lưu trữ gần đây</h6>
+      <table class="table table-sm mb-0">
+        <thead class="table-light"><tr><th>Thời điểm</th><th>Trạng thái</th><th>% đã dùng</th><th>Ổ lỗi</th><th>Ghi chú</th></tr></thead>
+        <tbody>
+          {% for log in storage_logs %}
+          <tr>
+            <td>{{ log.checked_at | localtime }}</td>
+            <td><span class="badge text-bg-{{ log.overall_status | badge }}">{{ log.overall_status }}</span></td>
+            <td>{{ log.used_pct if log.used_pct is not none else "—" }}</td>
+            <td>{{ log.hdd_error_count if log.hdd_error_count is not none else "—" }}</td>
+            <td>{{ log.error_msg or "" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-3">Chưa có log lưu trữ.</td></tr>
           {% endfor %}
         </tbody>
       </table>

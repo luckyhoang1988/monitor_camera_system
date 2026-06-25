@@ -7,7 +7,14 @@ from datetime import datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Alert, CameraChannel, NVRDevice, NVRStatusLog
+from app.db.models import (
+    Alert,
+    CameraChannel,
+    NVRDevice,
+    NVRHdd,
+    NVRStatusLog,
+    NVRStorageLog,
+)
 from app.enums import (
     NVR_DOWN_STATE_VALUES,
     AlertStatus,
@@ -188,6 +195,23 @@ async def get_nvr_detail(session: AsyncSession, nvr_id: int) -> dict | None:
         )
     ).all()
 
+    # Trạng thái hiện tại từng ổ + lịch sử sức khỏe lưu trữ gần đây.
+    hdds = (
+        await session.scalars(
+            select(NVRHdd)
+            .where(NVRHdd.nvr_id == nvr_id)
+            .order_by(NVRHdd.hdd_id)
+        )
+    ).all()
+    storage_logs = (
+        await session.scalars(
+            select(NVRStorageLog)
+            .where(NVRStorageLog.nvr_id == nvr_id)
+            .order_by(NVRStorageLog.checked_at.desc())
+            .limit(20)
+        )
+    ).all()
+
     # NVR đã CHỐT chết -> dữ liệu camera là cũ (job camera ngừng quét). Warning thì
     # KHÔNG coi là cũ (chập chờn, camera giữ last-known). Cờ này điều khiển hiển thị
     # badge "(cũ)" + banner cảnh báo trong template.
@@ -196,6 +220,8 @@ async def get_nvr_detail(session: AsyncSession, nvr_id: int) -> dict | None:
         "nvr": nvr,
         "cameras": cameras,
         "logs": recent_logs,
+        "hdds": hdds,
+        "storage_logs": storage_logs,
         "cams_stale": cams_stale,
     }
 

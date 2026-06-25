@@ -75,6 +75,9 @@ _BADGE = {
     "No Signal": "warning",
     "Auth Failed": "danger",
     "Unknown": "secondary",
+    # Trạng thái lưu trữ (StorageStatus)
+    "Healthy": "success",
+    "Critical": "danger",
 }
 
 # Map severity alert -> class màu Bootstrap.

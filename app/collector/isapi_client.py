@@ -84,6 +84,14 @@ def _find_text(elem: ET.Element, name: str) -> str | None:
     return None
 
 
+def _to_int(value: str | None) -> int | None:
+    """Ép chuỗi số (có thể kèm đơn vị/khoảng trắng) về int, lỗi -> None."""
+    if value is None:
+        return None
+    m = re.search(r"-?\d+", value)
+    return int(m.group()) if m else None
+
+
 @dataclass
 class DeviceInfo:
     model: str | None = None
@@ -99,6 +107,28 @@ class ChannelInfo:
     ip: str | None = None
     online: bool | None = None  # None = chưa rõ
     raw_status: str | None = None
+
+
+@dataclass
+class HddInfo:
+    """Trạng thái 1 ổ cứng trong NVR (từ /ISAPI/ContentMgmt/Storage)."""
+
+    hdd_id: int
+    name: str | None = None
+    capacity_mb: int | None = None
+    free_mb: int | None = None
+    status: str | None = None  # ok / unformatted / error / sleeping / ...
+    is_recording: bool | None = None  # property có quyền ghi (R/W) -> đang ghi hình
+    smart_health: str | None = None  # "good"/"bad"... (chỉ một số firmware)
+    temperature_c: int | None = None  # nhiệt độ °C (chỉ một số firmware)
+
+
+@dataclass
+class StorageInfo:
+    """Tổng hợp lưu trữ của 1 NVR: danh sách ổ + trạng thái RAID (nếu có)."""
+
+    hdds: list[HddInfo] = field(default_factory=list)
+    raid_status: str | None = None  # None = không có RAID / không hỗ trợ
 
 
 @dataclass
@@ -213,6 +243,70 @@ class ISAPIClient:
             info.raw_status = raw
 
         return list(channels.values())
+
+    async def get_storage_info(self, client: httpx.AsyncClient) -> StorageInfo:
+        """Lấy trạng thái lưu trữ (HDD + RAID) của NVR.
+
+        - /ISAPI/ContentMgmt/Storage -> <hddList><hdd>... và <raidList><raid>...
+          Mỗi <hdd> có: id, hddName, capacity, freeSpace, status, property.
+          `property` chứa "rw"/"R/W" -> ổ đang dùng để ghi hình.
+        - S.M.A.R.T (health/nhiệt độ) ở endpoint phụ tùy firmware -> bọc try/except,
+          không hỗ trợ thì để None (giống cách get_channels bỏ qua endpoint thiếu).
+        """
+        root = await self._get_xml(client, "/ISAPI/ContentMgmt/Storage")
+
+        hdds: list[HddInfo] = []
+        for hdd in root.iter():
+            if local_name(hdd.tag) != "hdd":
+                continue
+            hid = _find_text(hdd, "id")
+            if hid is None:
+                continue
+            prop = (_find_text(hdd, "property") or "").lower()
+            hdds.append(
+                HddInfo(
+                    hdd_id=int(re.sub(r"\D", "", hid) or 0),
+                    name=_find_text(hdd, "hddName"),
+                    capacity_mb=_to_int(_find_text(hdd, "capacity")),
+                    free_mb=_to_int(_find_text(hdd, "freeSpace")),
+                    status=_find_text(hdd, "status"),
+                    is_recording="rw" in prop or "r/w" in prop or "w" == prop,
+                )
+            )
+
+        raid_status: str | None = None
+        for raid in root.iter():
+            if local_name(raid.tag) != "raid":
+                continue
+            # Lấy trạng thái RAID đầu tiên gặp được (thường chỉ 1 array).
+            raid_status = _find_text(raid, "status") or _find_text(raid, "raidStatus")
+            if raid_status:
+                break
+
+        # S.M.A.R.T best-effort: firmware không hỗ trợ -> bỏ qua, giữ None.
+        await self._enrich_smart(client, hdds)
+
+        return StorageInfo(hdds=hdds, raid_status=raid_status)
+
+    async def _enrich_smart(
+        self, client: httpx.AsyncClient, hdds: list[HddInfo]
+    ) -> None:
+        """Bổ sung sức khỏe S.M.A.R.T + nhiệt độ cho từng ổ (best-effort).
+
+        Endpoint S.M.A.R.T khác nhau theo firmware và nhiều máy không có -> mọi lỗi
+        (404/parse/timeout) đều nuốt, để các trường smart_health/temperature_c = None.
+        """
+        for hdd in hdds:
+            try:
+                smart = await self._get_xml(
+                    client, f"/ISAPI/ContentMgmt/Storage/hdd/{hdd.hdd_id}/Smart"
+                )
+            except (ISAPIError, httpx.HTTPError, OSError, asyncio.TimeoutError):
+                continue
+            hdd.smart_health = _find_text(smart, "evaluation") or _find_text(
+                smart, "selfEvaluation"
+            )
+            hdd.temperature_c = _to_int(_find_text(smart, "temperature"))
 
 
 async def probe_nvr(

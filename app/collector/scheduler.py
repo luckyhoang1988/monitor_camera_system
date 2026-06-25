@@ -17,11 +17,16 @@ from app.config import get_settings
 from app.db.base import AsyncSessionLocal
 from app.db.models import NVRDevice
 from app.enums import NVR_DOWN_STATES, NVRStatus
-from app.services.alert_service import process_camera_alerts, process_nvr_alerts
+from app.services.alert_service import (
+    process_camera_alerts,
+    process_nvr_alerts,
+    process_storage_alerts,
+)
 from app.services.event_bus import (
     EVENT_ALERT,
     EVENT_CAMERA_CHANGE,
     EVENT_NVR_CHANGE,
+    EVENT_STORAGE_CHANGE,
     event_bus,
 )
 from app.services.retention_service import purge_old_logs
@@ -30,6 +35,7 @@ from app.services.status_service import (
     check_and_update_nvr_health,
     log_cameras_unreachable,
     update_nvr_cameras,
+    update_nvr_storage,
 )
 
 logger = logging.getLogger("chek_nvr.scheduler")
@@ -195,6 +201,62 @@ async def scan_cameras() -> None:
     await asyncio.gather(*(_cameras_one(i, sem) for i in ids))
 
 
+async def _storage_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
+    """Quét sức khỏe lưu trữ 1 NVR (chỉ NVR Online), xử lý alert + phát SSE."""
+    settings = get_settings()
+    async with sem:
+        async with AsyncSessionLocal() as session:
+            nvr = await session.get(NVRDevice, nvr_id)
+            if nvr is None or not nvr.enabled:
+                return
+            try:
+                if NVRStatus(nvr.current_status) != NVRStatus.ONLINE:
+                    return  # NVR không Online -> không lấy được storage; bỏ qua.
+                nvr_name = nvr.name
+                outcome = await update_nvr_storage(
+                    session,
+                    nvr,
+                    timeout=settings.request_timeout,
+                    warn_pct=settings.disk_warn_pct,
+                    crit_pct=settings.disk_crit_pct,
+                    temp_warn_c=settings.hdd_temp_warn_c,
+                )
+                if outcome.ok:
+                    await process_storage_alerts(session, nvr_id, nvr_name, outcome)
+                await session.commit()
+                # Phát SSE SAU commit khi trạng thái lưu trữ đổi (kèm alert nếu có).
+                if outcome.ok and outcome.changed:
+                    event_bus.publish(EVENT_STORAGE_CHANGE, {"nvr_id": nvr_id})
+                    event_bus.publish(EVENT_ALERT, {"nvr_id": nvr_id})
+                await flush_telegram_notifications(session)
+            except Exception:  # noqa: BLE001 - 1 NVR lỗi không được dừng cả batch
+                await session.rollback()
+                logger.exception("Lỗi khi quét lưu trữ NVR %s", nvr_id)
+
+
+async def scan_storage() -> None:
+    """Quét sức khỏe lưu trữ (HDD/RAID/S.M.A.R.T) cho toàn bộ NVR đang bật.
+
+    Chỉ NVR Online mới đọc được storage; NVR khác bỏ qua (giữ trạng thái last-known).
+    Chạy ở tần suất thấp (`storage_check_interval`) vì lưu trữ ít biến động.
+    """
+    settings = get_settings()
+    sem = asyncio.Semaphore(settings.max_concurrency)
+
+    async with AsyncSessionLocal() as session:
+        ids = (
+            await session.scalars(
+                select(NVRDevice.id).where(NVRDevice.enabled.is_(True))
+            )
+        ).all()
+
+    if not ids:
+        return
+
+    logger.info("Quét lưu trữ %d NVR", len(ids))
+    await asyncio.gather(*(_storage_one(i, sem) for i in ids))
+
+
 async def purge_logs_job() -> None:
     """Dọn log cũ theo `log_retention_days` (chạy mỗi ngày)."""
     settings = get_settings()
@@ -209,9 +271,11 @@ async def purge_logs_job() -> None:
             logger.exception("Lỗi khi dọn log cũ")
             return
     logger.info(
-        "Retention: đã xóa %d log NVR, %d log camera, %d alert đã đóng (giữ %d ngày)",
+        "Retention: đã xóa %d log NVR, %d log camera, %d log lưu trữ, "
+        "%d alert đã đóng (giữ %d ngày)",
         result.nvr_logs,
         result.camera_logs,
+        result.storage_logs,
         result.resolved_alerts,
         settings.log_retention_days,
     )
@@ -249,6 +313,14 @@ def start_scheduler() -> AsyncIOScheduler:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        scan_storage,
+        "interval",
+        seconds=settings.storage_check_interval,
+        id="scan_storage",
+        max_instances=1,
+        coalesce=True,
+    )
     # Dọn log cũ mỗi ngày lúc 03:00 (giờ thấp điểm theo timezone cấu hình).
     scheduler.add_job(
         purge_logs_job,
@@ -263,10 +335,11 @@ def start_scheduler() -> AsyncIOScheduler:
     _scheduler = scheduler
     logger.info(
         "Scheduler đã chạy: health mỗi %ds, fast lane mỗi %ds, camera mỗi %ds, "
-        "dọn log 03:00 (giữ %d ngày)",
+        "lưu trữ mỗi %ds, dọn log 03:00 (giữ %d ngày)",
         settings.nvr_check_interval,
         settings.nvr_check_interval_fast,
         settings.camera_check_interval,
+        settings.storage_check_interval,
         settings.log_retention_days,
     )
     return scheduler

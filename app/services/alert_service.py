@@ -25,10 +25,12 @@ from app.enums import (
     AlertType,
     NVRStatus,
 )
+from app.enums import StorageStatus
 from app.services.status_service import (
     CameraEvent,
     CameraScanOutcome,
     NVRHealthOutcome,
+    StorageScanOutcome,
 )
 from app.services.telegram_notifier import queue_alert
 
@@ -297,4 +299,67 @@ async def process_camera_alerts(
             session,
             severity=AlertSeverity.INFO.value,
             message=_group_message(nvr_name, recovered_now, "đã online trở lại"),
+        )
+
+
+async def process_storage_alerts(
+    session: AsyncSession,
+    nvr_id: int,
+    nvr_name: str,
+    outcome: StorageScanOutcome,
+) -> None:
+    """Tạo/resolve alert lưu trữ (ổ lỗi / dung lượng đầy / hồi phục) theo chuyển trạng thái.
+
+    Tái dùng nguyên helper dedupe/resolve. Hai loại alert riêng để phân biệt nguyên nhân:
+    - `HDD_ERROR` (CRITICAL): ổ error/unformatted hoặc không ghi được hình.
+    - `HDD_FULL`: dung lượng vượt ngưỡng (CRITICAL khi >= crit_pct, WARNING khi >= warn_pct).
+    Khi lưu trữ về Healthy -> resolve cả hai + báo sự kiện `STORAGE_RECOVERED`.
+    Chỉ gọi khi `outcome.ok` (dữ liệu tin cậy) — caller đã đảm bảo.
+    """
+    reason = outcome.reason or ""
+
+    # 1. Ổ lỗi / mất ghi hình.
+    if outcome.has_disk_error:
+        await _create_alert(
+            session,
+            nvr_id=nvr_id,
+            alert_type=AlertType.HDD_ERROR,
+            severity=AlertSeverity.CRITICAL,
+            message=f"NVR '{nvr_name}' — sự cố ổ cứng: {reason}.",
+        )
+    else:
+        await _resolve_open_alerts(session, nvr_id, AlertType.HDD_ERROR)
+
+    # 2. Dung lượng theo ngưỡng.
+    if outcome.new_status == StorageStatus.CRITICAL and outcome.is_full_critical:
+        await _create_alert(
+            session,
+            nvr_id=nvr_id,
+            alert_type=AlertType.HDD_FULL,
+            severity=AlertSeverity.CRITICAL,
+            message=f"NVR '{nvr_name}' — dung lượng tới hạn: {reason}.",
+        )
+    elif outcome.new_status == StorageStatus.WARNING and outcome.used_pct is not None:
+        await _create_alert(
+            session,
+            nvr_id=nvr_id,
+            alert_type=AlertType.HDD_FULL,
+            severity=AlertSeverity.WARNING,
+            message=f"NVR '{nvr_name}' — cảnh báo lưu trữ: {reason}.",
+        )
+    elif outcome.new_status == StorageStatus.HEALTHY:
+        await _resolve_open_alerts(session, nvr_id, AlertType.HDD_FULL)
+
+    # 3. Hồi phục: vừa từ trạng thái lỗi/cảnh báo trở lại Healthy.
+    if (
+        outcome.new_status == StorageStatus.HEALTHY
+        and outcome.prev_status in (StorageStatus.WARNING, StorageStatus.CRITICAL)
+    ):
+        await _create_alert(
+            session,
+            nvr_id=nvr_id,
+            alert_type=AlertType.STORAGE_RECOVERED,
+            severity=AlertSeverity.INFO,
+            message=f"NVR '{nvr_name}' — lưu trữ đã trở lại bình thường.",
+            is_event=True,
         )

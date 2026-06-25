@@ -20,6 +20,7 @@ logger = logging.getLogger("chek_nvr.events")
 # Các loại sự kiện phát ra (khớp tên dùng ở template: hx-trigger="sse:<type>").
 EVENT_NVR_CHANGE = "nvr-change"
 EVENT_CAMERA_CHANGE = "camera-change"
+EVENT_STORAGE_CHANGE = "storage-change"
 EVENT_ALERT = "alert"
 
 

@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -21,6 +22,7 @@ from app.enums import (
     AlertType,
     CameraStatus,
     NVRStatus,
+    StorageStatus,
     UserRole,
 )
 
@@ -59,12 +61,31 @@ class NVRDevice(Base):
     )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- Tóm tắt sức khỏe lưu trữ (cập nhật bởi job storage; xem CLAUDE.md) ---
+    # Lưu sẵn trên NVR để list/detail hiển thị nhanh (giống model/serial/firmware).
+    storage_status: Mapped[StorageStatus] = mapped_column(
+        String(20), default=StorageStatus.UNKNOWN.value
+    )
+    storage_total_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_free_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_used_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hdd_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hdd_healthy_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    raid_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    storage_last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    storage_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     cameras: Mapped[list["CameraChannel"]] = relationship(
+        back_populates="nvr", cascade="all, delete-orphan"
+    )
+    hdds: Mapped[list["NVRHdd"]] = relationship(
         back_populates="nvr", cascade="all, delete-orphan"
     )
 
@@ -126,6 +147,56 @@ class CameraStatusLog(Base):
         ForeignKey("camera_channels.id", ondelete="CASCADE")
     )
     status: Mapped[CameraStatus] = mapped_column(String(20))
+    error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class NVRHdd(Base):
+    """Trạng thái HIỆN TẠI của từng ổ cứng trong 1 NVR (mô phỏng camera_channels)."""
+
+    __tablename__ = "nvr_hdd"
+    __table_args__ = (
+        Index("ix_nvr_hdd_nvr_hddid", "nvr_id", "hdd_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nvr_id: Mapped[int] = mapped_column(
+        ForeignKey("nvr_devices.id", ondelete="CASCADE")
+    )
+    hdd_id: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    capacity_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    free_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    is_recording: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    smart_health: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    temperature_c: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    nvr: Mapped["NVRDevice"] = relationship(back_populates="hdds")
+
+
+class NVRStorageLog(Base):
+    """Lịch sử sức khỏe lưu trữ của 1 NVR (mô phỏng nvr_status_logs)."""
+
+    __tablename__ = "nvr_storage_logs"
+    __table_args__ = (
+        Index("ix_nvr_storage_log_nvr_checked", "nvr_id", "checked_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nvr_id: Mapped[int] = mapped_column(
+        ForeignKey("nvr_devices.id", ondelete="CASCADE")
+    )
+    overall_status: Mapped[StorageStatus] = mapped_column(String(20))
+    total_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    free_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    used_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hdd_error_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
     checked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

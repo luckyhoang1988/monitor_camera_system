@@ -13,10 +13,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collector.camera_checker import evaluate_cameras
-from app.collector.checker import apply_state_machine, check_nvr, fetch_nvr_channels
+from app.collector.checker import (
+    apply_state_machine,
+    check_nvr,
+    fetch_nvr_channels,
+    fetch_nvr_storage,
+)
+from app.collector.storage_checker import evaluate_storage
 from app.config import get_settings
-from app.db.models import CameraChannel, CameraStatusLog, NVRDevice, NVRStatusLog
-from app.enums import CameraStatus, NVRStatus
+from app.db.models import (
+    CameraChannel,
+    CameraStatusLog,
+    NVRDevice,
+    NVRHdd,
+    NVRStatusLog,
+    NVRStorageLog,
+)
+from app.enums import CameraStatus, NVRStatus, StorageStatus
 from app.security import decrypt_password
 
 logger = logging.getLogger("chek_nvr.status")
@@ -227,6 +240,145 @@ async def log_cameras_unreachable(session: AsyncSession, nvr: NVRDevice) -> None
         "NVR %s không Online -> ghi %d log camera Unknown (cho báo cáo uptime)",
         nvr.id,
         len(cam_ids),
+    )
+
+
+@dataclass
+class StorageScanOutcome:
+    """Kết quả quét lưu trữ 1 NVR (job storage) — phục vụ sinh alert lưu trữ.
+
+    `ok=False`: không lấy được dữ liệu tin cậy (fetch lỗi/timeout) -> caller BỎ QUA
+    alert để tránh resolve nhầm (giống CameraScanOutcome).
+    """
+
+    ok: bool
+    prev_status: StorageStatus
+    new_status: StorageStatus
+    used_pct: float | None = None
+    has_disk_error: bool = False
+    is_full_critical: bool = False
+    reason: str | None = None  # mô tả gộp lý do (để dựng nội dung alert)
+    # True nếu trạng thái lưu trữ đổi so với lần trước -> báo UI re-fetch qua SSE.
+    changed: bool = False
+
+
+async def update_nvr_storage(
+    session: AsyncSession,
+    nvr: NVRDevice,
+    *,
+    timeout: int,
+    warn_pct: int,
+    crit_pct: int,
+    temp_warn_c: int,
+) -> StorageScanOutcome:
+    """Quét + cập nhật sức khỏe lưu trữ của 1 NVR (job storage; gọi cho NVR Online).
+
+    Mô phỏng `update_nvr_cameras`: fetch storage, đánh giá thuần bằng `evaluate_storage`,
+    upsert `nvr_hdd` theo (nvr_id, hdd_id), cập nhật cột tóm tắt trên NVRDevice và ghi 1
+    dòng `nvr_storage_logs`. Fetch lỗi -> `ok=False`, KHÔNG đổi trạng thái.
+    """
+    settings = get_settings()
+    password = decrypt_password(nvr.password_enc)
+    prev_status = StorageStatus(nvr.storage_status)
+
+    storage, error = await fetch_nvr_storage(
+        host=nvr.host,
+        username=nvr.username,
+        password=password,
+        port=nvr.http_port,
+        use_https=nvr.use_https,
+        timeout=timeout,
+        tls_fingerprint=nvr.tls_fingerprint,
+        retries=settings.request_retries,
+        retry_backoff_base=settings.retry_backoff_base,
+    )
+    if error or storage is None:
+        if error:
+            logger.warning(
+                "Storage fetch NVR %s thất bại, giữ nguyên trạng thái lưu trữ: %s",
+                nvr.id,
+                error,
+            )
+        nvr.storage_last_checked_at = _now()
+        nvr.storage_last_error = error
+        return StorageScanOutcome(
+            ok=False, prev_status=prev_status, new_status=prev_status
+        )
+
+    ev = evaluate_storage(
+        storage, warn_pct=warn_pct, crit_pct=crit_pct, temp_warn_c=temp_warn_c
+    )
+    now = _now()
+
+    # Upsert hàng nvr_hdd theo (nvr_id, hdd_id).
+    existing = {
+        h.hdd_id: h
+        for h in (
+            await session.scalars(select(NVRHdd).where(NVRHdd.nvr_id == nvr.id))
+        ).all()
+    }
+    for hdd in storage.hdds:
+        row = existing.get(hdd.hdd_id)
+        if row is None:
+            row = NVRHdd(nvr_id=nvr.id, hdd_id=hdd.hdd_id)
+            session.add(row)
+        row.name = hdd.name or row.name
+        row.capacity_mb = hdd.capacity_mb
+        row.free_mb = hdd.free_mb
+        row.status = hdd.status
+        row.is_recording = hdd.is_recording
+        row.smart_health = hdd.smart_health
+        row.temperature_c = hdd.temperature_c
+        row.last_checked_at = now
+
+    # Cập nhật cột tóm tắt trên NVR.
+    nvr.storage_status = ev.overall.value
+    nvr.storage_total_mb = ev.total_mb
+    nvr.storage_free_mb = ev.free_mb
+    nvr.storage_used_pct = ev.used_pct
+    nvr.hdd_count = ev.hdd_count
+    nvr.hdd_healthy_count = ev.hdd_healthy_count
+    nvr.raid_status = ev.raid_status
+    nvr.storage_last_checked_at = now
+    nvr.storage_last_error = None
+
+    reason = "; ".join(ev.reasons) if ev.reasons else None
+    session.add(
+        NVRStorageLog(
+            nvr_id=nvr.id,
+            overall_status=ev.overall.value,
+            total_mb=ev.total_mb,
+            free_mb=ev.free_mb,
+            used_pct=ev.used_pct,
+            hdd_error_count=ev.hdd_error_count,
+            error_msg=reason,
+        )
+    )
+
+    changed = ev.overall != prev_status
+    if changed:
+        log = (
+            logger.warning
+            if ev.overall in {StorageStatus.WARNING, StorageStatus.CRITICAL}
+            else logger.info
+        )
+        log(
+            "NVR %s lưu trữ %s -> %s: %s",
+            nvr.id,
+            prev_status.value,
+            ev.overall.value,
+            reason or "-",
+        )
+
+    return StorageScanOutcome(
+        ok=True,
+        prev_status=prev_status,
+        new_status=ev.overall,
+        used_pct=ev.used_pct,
+        has_disk_error=ev.has_disk_error,
+        is_full_critical=ev.is_full_critical,
+        reason=reason,
+        changed=changed,
     )
 
 

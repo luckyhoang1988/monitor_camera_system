@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     # nghi ngờ/đã chết (Warning/Offline/Auth/Network) ở nhịp nhanh -> xác nhận sự cố và
     # phát hiện hồi phục gần như tức thì. NVR khỏe vẫn theo `nvr_check_interval`.
     nvr_check_interval_fast: int = 30
+    # Quét sức khỏe lưu trữ (HDD/RAID/S.M.A.R.T) — chậm hơn vì ít biến động.
+    storage_check_interval: int = 900
 
     # --- Tham số kiểm tra ---
     request_timeout: int = 10  # timeout tổng (giây) — dùng cho ping/port và fallback
@@ -63,6 +65,8 @@ class Settings(BaseSettings):
     # Ngưỡng màu cho % disk đã dùng (panel giám sát dung lượng ở trang Cảnh báo).
     disk_warn_pct: int = 80  # vàng khi >= ngưỡng này
     disk_crit_pct: int = 90  # đỏ khi >= ngưỡng này
+    # Nhiệt độ ổ cứng (°C) coi là cao -> đẩy lưu trữ sang Warning (nếu firmware báo).
+    hdd_temp_warn_c: int = 55
 
     # --- Cảnh báo qua Telegram (kênh ngoài, tùy chọn) ---
     # Bật để đẩy mỗi alert mới (offline/auth/recovery/slow/camera) lên Telegram.

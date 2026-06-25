@@ -10,6 +10,7 @@ from app.enums import (
     AlertType,
     CameraStatus,
     NVRStatus,
+    StorageStatus,
 )
 
 
@@ -38,6 +39,16 @@ class NVRRead(NVRBase):
     last_checked_at: datetime | None = None
     last_error: str | None = None
     enabled: bool = True
+    # Tóm tắt sức khỏe lưu trữ (job storage cập nhật).
+    storage_status: StorageStatus = StorageStatus.UNKNOWN
+    storage_total_mb: int | None = None
+    storage_free_mb: int | None = None
+    storage_used_pct: float | None = None
+    hdd_count: int | None = None
+    hdd_healthy_count: int | None = None
+    raid_status: str | None = None
+    storage_last_checked_at: datetime | None = None
+    storage_last_error: str | None = None
 
 
 class CameraRead(BaseModel):
