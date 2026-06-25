@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db.base import AsyncSessionLocal
 from app.db.models import NVRDevice
-from app.enums import NVRStatus
+from app.enums import NVR_DOWN_STATES, NVRStatus
 from app.services.alert_service import process_camera_alerts, process_nvr_alerts
 from app.services.retention_service import purge_old_logs
 from app.services.telegram_notifier import flush_telegram_notifications
@@ -65,8 +65,10 @@ async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
     """Quét camera của 1 NVR.
 
     - NVR Online: fetch kênh thật + cập nhật trạng thái + xử lý alert.
-    - NVR không Online: không fetch được; ghi log camera Unknown để báo cáo uptime
-      camera bị trừ đúng thời gian NVR chết (không alert — alert NVR-level đã lo).
+    - NVR đã chốt chết (Offline/Network/Auth): không fetch được; ghi log camera Unknown
+      để báo cáo uptime camera bị trừ đúng downtime (không alert — alert NVR-level đã lo).
+    - NVR Warning (chập chờn, chưa kết luận): KHÔNG đụng — giữ camera last-known, không
+      ghi log, không trừ uptime (chống flapping, đồng bộ với tầng cảnh báo).
     """
     settings = get_settings()
     async with sem:
@@ -75,7 +77,8 @@ async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
             if nvr is None or not nvr.enabled:
                 return
             try:
-                if NVRStatus(nvr.current_status) == NVRStatus.ONLINE:
+                status = NVRStatus(nvr.current_status)
+                if status == NVRStatus.ONLINE:
                     nvr_name = nvr.name
                     outcome = await update_nvr_cameras(
                         session, nvr, timeout=settings.request_timeout
@@ -86,8 +89,9 @@ async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                         await process_camera_alerts(
                             session, nvr_id, nvr_name, outcome
                         )
-                else:
+                elif status in NVR_DOWN_STATES:
                     await log_cameras_unreachable(session, nvr)
+                # else: Warning -> không làm gì (giữ last-known).
                 await session.commit()
                 await flush_telegram_notifications(session)
             except Exception:  # noqa: BLE001 - 1 NVR lỗi không được dừng cả batch

@@ -11,6 +11,17 @@ class NVRStatus(str, Enum):
     NETWORK_ERROR = "Network Error"
 
 
+# NVR coi là "đã chốt chết" (confirmed down). KHÁC `Warning` — Warning là trạng thái
+# chập chờn chưa kết luận (state machine chống flapping, chưa escalate sang Offline).
+# Dùng THỐNG NHẤT cho mọi quyết định "NVR coi như chết": sinh alert, đếm/hiển thị
+# camera là mất tín hiệu, ghi log Unknown trừ uptime, đánh dấu dữ liệu camera là cũ.
+# Online và Warning KHÔNG nằm trong tập này (camera giữ trạng thái last-known).
+NVR_DOWN_STATES = frozenset(
+    {NVRStatus.OFFLINE, NVRStatus.NETWORK_ERROR, NVRStatus.AUTH_ERROR}
+)
+NVR_DOWN_STATE_VALUES = frozenset(s.value for s in NVR_DOWN_STATES)
+
+
 class CameraStatus(str, Enum):
     ONLINE = "Online"
     OFFLINE = "Offline"

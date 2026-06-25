@@ -41,10 +41,10 @@
   </div>
 
   <div class="col-md-8">
-    {# NVR không Online -> job quét camera ngừng chạy, nên trạng thái camera dưới đây
-       là dữ liệu ĐÓNG BĂNG ở lần quét cuối, KHÔNG phản ánh thời gian thực. Hiển thị
-       mờ (xám) + cảnh báo để khỏi hiểu nhầm "camera vẫn Online" trong khi NVR đã rớt. #}
-    {% set cams_stale = nvr.current_status != 'Online' %}
+    {# NVR đã chốt chết (Offline/Network/Auth) -> job quét camera ngừng, trạng thái
+       camera dưới đây là dữ liệu ĐÓNG BĂNG, KHÔNG phản ánh thời gian thực -> hiển thị
+       mờ (xám) + cảnh báo. NVR Warning (chập chờn) KHÔNG coi là cũ. Cờ `cams_stale`
+       do query_service.get_nvr_detail tính (dùng chung NVR_DOWN_STATES). #}
     <div class="card mb-3"><div class="card-body">
       <h6 class="card-title">Camera ({{ cameras | length }})</h6>
       {% if cams_stale and cameras %}

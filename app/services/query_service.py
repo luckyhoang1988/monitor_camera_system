@@ -8,7 +8,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Alert, CameraChannel, NVRDevice, NVRStatusLog
-from app.enums import AlertStatus, CameraStatus, NVRStatus
+from app.enums import (
+    NVR_DOWN_STATE_VALUES,
+    AlertStatus,
+    CameraStatus,
+    NVRStatus,
+)
 from app.schemas import SystemOverview
 
 # Trạng thái camera coi là "mất tín hiệu" theo chính nó.
@@ -20,12 +25,13 @@ def _camera_offline_condition():
     danh sách, để hai nơi luôn khớp nhau.
 
     Một camera coi là mất tín hiệu nếu: bản thân nó Offline/No Signal, HOẶC NVR cha
-    đang không Online (NVR rớt -> job camera ngừng quét, trạng thái camera đóng băng
-    không còn đáng tin -> coi như mất). Yêu cầu query có JOIN tới NVRDevice.
+    đang ở trạng thái CHỐT CHẾT (Offline/Network/Auth — xem NVR_DOWN_STATES). NVR
+    `Warning` (chập chờn, chưa kết luận) KHÔNG tính: camera giữ trạng thái last-known
+    để khỏi báo động giả khi mạng blip. Yêu cầu query có JOIN tới NVRDevice.
     """
     return or_(
         CameraChannel.current_status.in_(_CAMERA_BAD_STATUSES),
-        NVRDevice.current_status != NVRStatus.ONLINE.value,
+        NVRDevice.current_status.in_(NVR_DOWN_STATE_VALUES),
     )
 
 
@@ -142,12 +148,12 @@ async def list_nvrs(
     for nvr in nvrs:
         counts = cam_map.get(nvr.id, {})
         cam_total = sum(counts.values())
-        # NVR không Online -> dữ liệu camera đã đóng băng, coi toàn bộ là offline để
-        # nhất quán với khối tổng quan (không hiện "Online" cũ gây hiểu nhầm).
-        if nvr.current_status == NVRStatus.ONLINE.value:
-            cam_online = counts.get(CameraStatus.ONLINE.value, 0)
-        else:
+        # NVR đã CHỐT chết -> dữ liệu camera đóng băng, coi toàn bộ là offline để nhất
+        # quán với khối tổng quan. NVR Online/Warning -> dùng số đếm thực (last-known).
+        if nvr.current_status in NVR_DOWN_STATE_VALUES:
             cam_online = 0
+        else:
+            cam_online = counts.get(CameraStatus.ONLINE.value, 0)
         result.append(
             {
                 "nvr": nvr,
@@ -182,7 +188,16 @@ async def get_nvr_detail(session: AsyncSession, nvr_id: int) -> dict | None:
         )
     ).all()
 
-    return {"nvr": nvr, "cameras": cameras, "logs": recent_logs}
+    # NVR đã CHỐT chết -> dữ liệu camera là cũ (job camera ngừng quét). Warning thì
+    # KHÔNG coi là cũ (chập chờn, camera giữ last-known). Cờ này điều khiển hiển thị
+    # badge "(cũ)" + banner cảnh báo trong template.
+    cams_stale = nvr.current_status in NVR_DOWN_STATE_VALUES
+    return {
+        "nvr": nvr,
+        "cameras": cameras,
+        "logs": recent_logs,
+        "cams_stale": cams_stale,
+    }
 
 
 async def list_alerts(

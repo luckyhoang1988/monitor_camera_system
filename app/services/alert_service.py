@@ -18,7 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.models import Alert
-from app.enums import AlertSeverity, AlertStatus, AlertType, NVRStatus
+from app.enums import (
+    NVR_DOWN_STATES,
+    AlertSeverity,
+    AlertStatus,
+    AlertType,
+    NVRStatus,
+)
 from app.services.status_service import (
     CameraEvent,
     CameraScanOutcome,
@@ -28,8 +34,8 @@ from app.services.telegram_notifier import queue_alert
 
 logger = logging.getLogger("chek_nvr.alert")
 
-# Trạng thái coi là "đang lỗi" của NVR.
-_DOWN_STATES = {NVRStatus.OFFLINE, NVRStatus.NETWORK_ERROR, NVRStatus.AUTH_ERROR}
+# Trạng thái coi là "đã chốt chết" của NVR (dùng chung toàn hệ thống — xem enums).
+_DOWN_STATES = NVR_DOWN_STATES
 
 
 async def _has_open_alert(
