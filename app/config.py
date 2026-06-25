@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # --- Tần suất quét (giây) ---
     nvr_check_interval: int = 180
     camera_check_interval: int = 600
+    # "Fast lane" (mô hình tiered-scrape của Prometheus): chỉ quét lại các NVR đang
+    # nghi ngờ/đã chết (Warning/Offline/Auth/Network) ở nhịp nhanh -> xác nhận sự cố và
+    # phát hiện hồi phục gần như tức thì. NVR khỏe vẫn theo `nvr_check_interval`.
+    nvr_check_interval_fast: int = 30
 
     # --- Tham số kiểm tra ---
     request_timeout: int = 10  # timeout tổng (giây) — dùng cho ping/port và fallback

@@ -145,6 +145,8 @@ class CameraScanOutcome:
     ok: bool
     offline_alertable: list[CameraEvent]
     recovered: list[CameraEvent]
+    # True nếu có ít nhất 1 camera đổi current_status ở lần quét này -> báo UI re-fetch.
+    changed: bool = False
 
 
 async def update_nvr_cameras(
@@ -183,9 +185,14 @@ async def update_nvr_cameras(
                 "Camera NVR %s không trả kênh nào — bỏ qua cập nhật camera", nvr.id
             )
         return CameraScanOutcome(ok=False, offline_alertable=[], recovered=[])
-    offline_alertable, recovered = await _update_cameras(session, nvr.id, channels)
+    offline_alertable, recovered, changed = await _update_cameras(
+        session, nvr.id, channels
+    )
     return CameraScanOutcome(
-        ok=True, offline_alertable=offline_alertable, recovered=recovered
+        ok=True,
+        offline_alertable=offline_alertable,
+        recovered=recovered,
+        changed=changed,
     )
 
 
@@ -225,15 +232,18 @@ async def log_cameras_unreachable(session: AsyncSession, nvr: NVRDevice) -> None
 
 async def _update_cameras(
     session: AsyncSession, nvr_id: int, channels: list
-) -> tuple[list[CameraEvent], list[CameraEvent]]:
+) -> tuple[list[CameraEvent], list[CameraEvent], bool]:
     """Upsert camera_channels theo (nvr_id, channel_no), ghi camera_status_logs.
 
     Theo dõi `offline_since` cho từng camera (set khi chuyển offline, clear khi
-    online lại). Trả về `(offline_alertable, recovered)`:
+    online lại). Trả về `(offline_alertable, recovered, changed)`:
     - `offline_alertable`: camera offline liên tục >= `camera_offline_alert_min`
       phút — tập đủ điều kiện sinh alert (xem alert_service §5).
     - `recovered`: camera vừa chuyển từ offline -> online ở lần quét này.
-    Mỗi phần tử là `CameraEvent` (camera_id/channel_no/name) để dựng alert chi tiết.
+    - `changed`: có ít nhất 1 camera đổi current_status (gồm cả camera mới) -> báo
+      UI re-fetch qua SSE.
+    Mỗi phần tử trong 2 danh sách là `CameraEvent` (camera_id/channel_no/name) để dựng
+    alert chi tiết.
     """
     existing = {
         c.channel_no: c
@@ -252,10 +262,13 @@ async def _update_cameras(
     rows: list[tuple[CameraChannel, object]] = []
     offline_rows: list[CameraChannel] = []
     recovered_rows: list[CameraChannel] = []
+    changed = False
     for cam in evaluated:
         row = existing.get(cam.channel_no)
         # Trạng thái ở lần quét trước (None nếu camera mới xuất hiện).
         prev_status = row.current_status if row is not None else None
+        if prev_status != cam.status.value:
+            changed = True
         if row is None:
             row = CameraChannel(nvr_id=nvr_id, channel_no=cam.channel_no)
             session.add(row)
@@ -293,4 +306,8 @@ async def _update_cameras(
     def _event(row: CameraChannel) -> CameraEvent:
         return CameraEvent(camera_id=row.id, channel_no=row.channel_no, name=row.name)
 
-    return [_event(r) for r in offline_rows], [_event(r) for r in recovered_rows]
+    return (
+        [_event(r) for r in offline_rows],
+        [_event(r) for r in recovered_rows],
+        changed,
+    )

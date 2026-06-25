@@ -16,8 +16,9 @@
   </div>
 </div>
 
-<!-- Tự động làm mới mỗi 30s qua HTMX polling (trạng thái + hiệu ứng nhấp nháy) -->
-<div id="dashboard-body" hx-get="/{{ offline_range_qs }}" hx-trigger="every 30s" hx-swap="innerHTML">
+<!-- Realtime: SSE đẩy ngay khi NVR/camera đổi trạng thái; polling 60s làm fallback nếu rớt SSE -->
+<div id="dashboard-body" hx-get="/{{ offline_range_qs }}"
+     hx-trigger="sse:nvr-change, sse:camera-change, every 60s" hx-swap="innerHTML">
   {% include "partials/dashboard_body.html" %}
 </div>
 

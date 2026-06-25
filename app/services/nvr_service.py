@@ -10,6 +10,12 @@ from app.db.models import NVRDevice
 from app.enums import NVRStatus
 from app.security import encrypt_password
 from app.services.alert_service import process_camera_alerts, process_nvr_alerts
+from app.services.event_bus import (
+    EVENT_ALERT,
+    EVENT_CAMERA_CHANGE,
+    EVENT_NVR_CHANGE,
+    event_bus,
+)
 from app.services.status_service import (
     check_and_update_nvr_health,
     update_nvr_cameras,
@@ -82,6 +88,7 @@ async def check_nvr_now(session: AsyncSession, nvr_id: int) -> bool:
         timeout=settings.request_timeout,
     )
     await process_nvr_alerts(session, outcome, nvr_name)
+    cam_outcome = None
     # Khi NVR Online thì quét luôn camera để nút "Kiểm tra ngay" phản ánh đầy đủ.
     if outcome.new_status == NVRStatus.ONLINE:
         cam_outcome = await update_nvr_cameras(
@@ -93,5 +100,14 @@ async def check_nvr_now(session: AsyncSession, nvr_id: int) -> bool:
                 session, nvr_id, nvr_name, cam_outcome
             )
     await session.commit()
+    # Phát SSE SAU commit để dashboard cập nhật ngay khi bấm "Kiểm tra ngay".
+    if outcome.new_status != outcome.prev_status:
+        event_bus.publish(EVENT_NVR_CHANGE, {"nvr_id": nvr_id})
+        event_bus.publish(EVENT_ALERT, {"nvr_id": nvr_id})
+    if cam_outcome is not None and cam_outcome.ok:
+        if cam_outcome.changed:
+            event_bus.publish(EVENT_CAMERA_CHANGE, {"nvr_id": nvr_id})
+        if cam_outcome.offline_alertable or cam_outcome.recovered:
+            event_bus.publish(EVENT_ALERT, {"nvr_id": nvr_id})
     await flush_telegram_notifications(session)
     return True

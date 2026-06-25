@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime, time, timezone
 from math import ceil
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (
+    HTMLResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +29,7 @@ from app.auth import (
 from app.config import get_settings
 from app.db.base import get_session
 from app.db.models import NVRDevice
+from app.services.event_bus import event_bus
 from app.services.user_service import UserServiceError, change_own_password
 from app.services.nvr_service import (
     check_nvr_now,
@@ -202,6 +210,52 @@ async def dashboard(
         else "dashboard.html"
     )
     return templates.TemplateResponse(request, template, ctx)
+
+
+# Khoảng giây gửi comment keep-alive khi không có event — giữ kết nối SSE sống qua
+# proxy/load-balancer (vốn hay đóng kết nối idle).
+_SSE_PING_INTERVAL = 15
+
+
+@router.get("/events")
+async def sse_events(request: Request) -> StreamingResponse:
+    """SSE stream realtime (tương đương Grafana Live).
+
+    Đẩy sự kiện *nhẹ* (nvr-change/camera-change/alert) mỗi khi collector phát hiện đổi
+    trạng thái; client (HTMX ext "sse") nghe `hx-trigger="sse:<type>"` rồi tự re-fetch
+    đúng partial cũ. Auth do middleware đảm nhiệm (chưa đăng nhập sẽ bị chặn trước route).
+    """
+    queue = event_bus.subscribe()
+
+    async def stream():
+        try:
+            # Comment mở đầu để client xác nhận kết nối đã mở.
+            yield ": connected\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(
+                        queue.get(), timeout=_SSE_PING_INTERVAL
+                    )
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"  # keep-alive (comment, client bỏ qua)
+                    continue
+                payload = json.dumps(event["data"], ensure_ascii=False)
+                yield f"event: {event['type']}\ndata: {payload}\n\n"
+        finally:
+            event_bus.unsubscribe(queue)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Tắt buffering ở reverse proxy (nginx) để event tới ngay, không bị gom.
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/export/offline-cameras")

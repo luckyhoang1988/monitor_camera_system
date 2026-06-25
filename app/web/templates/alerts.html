@@ -49,9 +49,9 @@
   </div>
 </div>
 
-<!-- Tự động làm mới mỗi 15s qua HTMX polling -->
+<!-- Realtime: SSE đẩy ngay khi có alert mới/resolve; polling 30s làm fallback nếu rớt SSE -->
 <div id="alert-table" hx-get="/alerts{% if show_all %}?show_all=true{% endif %}"
-     hx-trigger="every 15s" hx-swap="innerHTML">
+     hx-trigger="sse:alert, every 30s" hx-swap="innerHTML">
   {% include "partials/alert_table.html" %}
 </div>
 {% endblock %}

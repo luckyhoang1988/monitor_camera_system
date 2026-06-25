@@ -156,7 +156,7 @@ def test_recovery_resolves_alert(monkeypatch):
             cam.offline_since = datetime.now(timezone.utc) - timedelta(hours=1)
             await session.flush()
 
-            offline, recovered = await _update_cameras(session, nvr.id, ch_off)
+            offline, recovered, _ = await _update_cameras(session, nvr.id, ch_off)
             assert len(offline) == 1 and recovered == []
             assert offline[0].channel_no == 1
             await process_camera_alerts(
@@ -172,7 +172,7 @@ def test_recovery_resolves_alert(monkeypatch):
 
             # Camera lên lại -> recovered=[camera] -> resolve + báo recovery.
             ch_on = [ChannelInfo(channel_no=1, raw_status="online")]
-            offline2, recovered2 = await _update_cameras(session, nvr.id, ch_on)
+            offline2, recovered2, _ = await _update_cameras(session, nvr.id, ch_on)
             assert offline2 == [] and len(recovered2) == 1
             await process_camera_alerts(
                 session,

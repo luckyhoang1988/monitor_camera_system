@@ -18,6 +18,12 @@ from app.db.base import AsyncSessionLocal
 from app.db.models import NVRDevice
 from app.enums import NVR_DOWN_STATES, NVRStatus
 from app.services.alert_service import process_camera_alerts, process_nvr_alerts
+from app.services.event_bus import (
+    EVENT_ALERT,
+    EVENT_CAMERA_CHANGE,
+    EVENT_NVR_CHANGE,
+    event_bus,
+)
 from app.services.retention_service import purge_old_logs
 from app.services.telegram_notifier import flush_telegram_notifications
 from app.services.status_service import (
@@ -49,6 +55,11 @@ async def _health_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                 )
                 await process_nvr_alerts(session, outcome, nvr_name)
                 await session.commit()
+                # Phát SSE SAU commit (dữ liệu đã bền vững) khi NVR đổi trạng thái —
+                # đổi trạng thái cũng kéo theo tạo/resolve alert nên báo luôn "alert".
+                if outcome.new_status != outcome.prev_status:
+                    event_bus.publish(EVENT_NVR_CHANGE, {"nvr_id": nvr_id})
+                    event_bus.publish(EVENT_ALERT, {"nvr_id": nvr_id})
                 await flush_telegram_notifications(session)
                 logger.info(
                     "NVR %s: %s -> %s",
@@ -78,6 +89,7 @@ async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                 return
             try:
                 status = NVRStatus(nvr.current_status)
+                outcome = None
                 if status == NVRStatus.ONLINE:
                     nvr_name = nvr.name
                     outcome = await update_nvr_cameras(
@@ -93,6 +105,12 @@ async def _cameras_one(nvr_id: int, sem: asyncio.Semaphore) -> None:
                     await log_cameras_unreachable(session, nvr)
                 # else: Warning -> không làm gì (giữ last-known).
                 await session.commit()
+                # Phát SSE SAU commit khi có camera đổi trạng thái / có alert mới.
+                if outcome is not None and outcome.ok:
+                    if outcome.changed:
+                        event_bus.publish(EVENT_CAMERA_CHANGE, {"nvr_id": nvr_id})
+                    if outcome.offline_alertable or outcome.recovered:
+                        event_bus.publish(EVENT_ALERT, {"nvr_id": nvr_id})
                 await flush_telegram_notifications(session)
             except Exception:  # noqa: BLE001 - 1 NVR lỗi không được dừng cả batch
                 await session.rollback()
@@ -118,6 +136,37 @@ async def scan_nvr_health() -> None:
     logger.info(
         "Quét sức khỏe %d NVR (song song tối đa %d)", len(ids), settings.max_concurrency
     )
+    await asyncio.gather(*(_health_one(i, sem) for i in ids))
+
+
+async def scan_nvr_fast() -> None:
+    """Fast lane: chỉ quét lại NVR đang nghi ngờ/đã chết (mô hình tiered-scrape).
+
+    Tập theo dõi = Warning (chập chờn, chưa kết luận) + các trạng thái đã chốt chết
+    (Offline/Auth Error/Network Error). Quét ở nhịp `nvr_check_interval_fast` để:
+    - leo thang Warning -> Offline nhanh hơn (xác nhận đủ `fail_threshold` lần sớm),
+    - phát hiện NVR hồi phục gần như tức thì (đẩy SSE recovery ngay).
+    NVR đang Online không nằm trong tập này -> giảm tải mạng (giống Prometheus chỉ
+    scrape dày các target cần chú ý).
+    """
+    settings = get_settings()
+    sem = asyncio.Semaphore(settings.max_concurrency)
+    watch_states = {NVRStatus.WARNING.value} | {s.value for s in NVR_DOWN_STATES}
+
+    async with AsyncSessionLocal() as session:
+        ids = (
+            await session.scalars(
+                select(NVRDevice.id).where(
+                    NVRDevice.enabled.is_(True),
+                    NVRDevice.current_status.in_(watch_states),
+                )
+            )
+        ).all()
+
+    if not ids:
+        return  # không có NVR nào cần theo dõi gấp -> im lặng, không log mỗi 30s
+
+    logger.info("Fast lane: quét lại %d NVR đang nghi ngờ/down", len(ids))
     await asyncio.gather(*(_health_one(i, sem) for i in ids))
 
 
@@ -185,6 +234,14 @@ def start_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
     scheduler.add_job(
+        scan_nvr_fast,
+        "interval",
+        seconds=settings.nvr_check_interval_fast,
+        id="scan_nvr_fast",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
         scan_cameras,
         "interval",
         seconds=settings.camera_check_interval,
@@ -205,8 +262,10 @@ def start_scheduler() -> AsyncIOScheduler:
     scheduler.start()
     _scheduler = scheduler
     logger.info(
-        "Scheduler đã chạy: health mỗi %ds, camera mỗi %ds, dọn log 03:00 (giữ %d ngày)",
+        "Scheduler đã chạy: health mỗi %ds, fast lane mỗi %ds, camera mỗi %ds, "
+        "dọn log 03:00 (giữ %d ngày)",
         settings.nvr_check_interval,
+        settings.nvr_check_interval_fast,
         settings.camera_check_interval,
         settings.log_retention_days,
     )
