@@ -18,6 +18,9 @@ env/
 # TLS — CA & cert nội bộ (sinh bằng scripts/gen_certs.sh, KHÔNG commit)
 tls/
 
+# Backup mã hóa (scripts/backup.sh) — KHÔNG commit, đồng bộ ra ngoài server
+backups/
+
 # IDE
 .vscode/
 .idea/
