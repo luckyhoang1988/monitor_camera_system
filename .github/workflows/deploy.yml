@@ -1,0 +1,47 @@
+# Deploy bằng image (GHCR) — XEM docs/CD_AND_SCALING.md để bật.
+# Để workflow_dispatch (chạy TAY) tới khi đã cấu hình secret + đổi docker-compose
+# service app sang `image:`. Đổi `on:` sang push/main để tự động.
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Đăng nhập GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/chek_nvr:latest
+            ghcr.io/${{ github.repository_owner }}/chek_nvr:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH pull & up (entrypoint tự chạy migration)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/Chek_NVR
+            docker compose pull app
+            docker compose up -d app
