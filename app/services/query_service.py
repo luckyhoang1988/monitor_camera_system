@@ -4,12 +4,29 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Alert, CameraChannel, NVRDevice, NVRStatusLog
 from app.enums import AlertStatus, CameraStatus, NVRStatus
 from app.schemas import SystemOverview
+
+# Trạng thái camera coi là "mất tín hiệu" theo chính nó.
+_CAMERA_BAD_STATUSES = (CameraStatus.OFFLINE.value, CameraStatus.NO_SIGNAL.value)
+
+
+def _camera_offline_condition():
+    """Điều kiện 'camera đang mất tín hiệu' — DÙNG CHUNG cho cả con số tổng quan và
+    danh sách, để hai nơi luôn khớp nhau.
+
+    Một camera coi là mất tín hiệu nếu: bản thân nó Offline/No Signal, HOẶC NVR cha
+    đang không Online (NVR rớt -> job camera ngừng quét, trạng thái camera đóng băng
+    không còn đáng tin -> coi như mất). Yêu cầu query có JOIN tới NVRDevice.
+    """
+    return or_(
+        CameraChannel.current_status.in_(_CAMERA_BAD_STATUSES),
+        NVRDevice.current_status != NVRStatus.ONLINE.value,
+    )
 
 
 async def get_overview(session: AsyncSession) -> SystemOverview:
@@ -29,22 +46,17 @@ async def get_overview(session: AsyncSession) -> SystemOverview:
         await session.scalar(select(func.count()).select_from(CameraChannel))
     ) or 0
 
-    # Camera CHỈ tính Online khi bản thân nó Online VÀ NVR cha đang Online.
-    # Camera thuộc NVR không-Online có dữ liệu đóng băng (job camera ngừng quét) nên
-    # không đáng tin -> coi như offline (xem nvr_detail.html). Tránh thổi phồng
-    # "Camera Online"/uptime khi NVR đã rớt nhưng camera còn hiện trạng thái Online cũ.
-    camera_online = (
+    # Đếm camera "mất tín hiệu" bằng ĐÚNG điều kiện của danh sách bên dưới
+    # (offline/no-signal HOẶC NVR cha không Online) để con số và bảng luôn khớp.
+    camera_offline = (
         await session.scalar(
             select(func.count())
             .select_from(CameraChannel)
             .join(NVRDevice, CameraChannel.nvr_id == NVRDevice.id)
-            .where(
-                CameraChannel.current_status == CameraStatus.ONLINE.value,
-                NVRDevice.current_status == NVRStatus.ONLINE.value,
-            )
+            .where(_camera_offline_condition())
         )
     ) or 0
-    camera_offline = camera_total - camera_online
+    camera_online = camera_total - camera_offline
     uptime = round(camera_online / camera_total * 100, 1) if camera_total else 0.0
 
     return SystemOverview(
@@ -65,17 +77,17 @@ async def list_offline_cameras(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[dict]:
-    """Camera đang mất tín hiệu (Offline / No Signal) kèm đầu ghi để nối tắt.
+    """Camera đang mất tín hiệu kèm đầu ghi để nối tắt.
 
-    Dùng cho khối "camera mất" trên trang Tổng quan: mỗi dòng biết thuộc NVR nào và
-    link thẳng tới trang chi tiết NVR đó.
+    Gồm camera tự nó Offline/No Signal VÀ camera thuộc NVR đang không Online (NVR rớt
+    -> coi toàn bộ camera là mất tín hiệu). Dùng chung điều kiện với khối đếm ở
+    `get_overview` để con số "Camera Offline" và bảng này luôn khớp nhau.
     """
-    bad_statuses = (CameraStatus.OFFLINE.value, CameraStatus.NO_SIGNAL.value)
     ref_ts = func.coalesce(CameraChannel.offline_since, CameraChannel.last_checked_at)
     stmt = (
         select(CameraChannel, NVRDevice.name, NVRDevice.area)
         .join(NVRDevice, CameraChannel.nvr_id == NVRDevice.id)
-        .where(CameraChannel.current_status.in_(bad_statuses))
+        .where(_camera_offline_condition())
         .order_by(NVRDevice.name, CameraChannel.channel_no)
     )
     if start is not None:
