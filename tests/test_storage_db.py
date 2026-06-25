@@ -103,6 +103,40 @@ def test_update_nvr_storage_twice_replaces_rows():
     asyncio.run(run())
 
 
+def test_smart_unsupported_stops_probing_and_bitrate_cached():
+    """Vòng 1 dò S.M.A.R.T + lấy bitrate; firmware không hỗ trợ -> vòng 2 thôi dò &
+    dùng bitrate cache (giảm request)."""
+    async def run():
+        engine, Session = await make_session()
+        async with Session() as session:
+            nvr = await _seed_nvr(session)
+            captured = []
+
+            async def fake_fetch(**kw):
+                captured.append(kw)
+                s = _raid_storage()
+                s.smart_supported = False  # đã dò, firmware không trả S.M.A.R.T
+                return s, None
+
+            with patch.object(status_service, "fetch_nvr_storage", fake_fetch), \
+                 patch.object(status_service, "decrypt_password", lambda _: "p"):
+                for _ in range(2):
+                    await status_service.update_nvr_storage(
+                        session, nvr, timeout=10, temp_warn_c=55
+                    )
+                    await session.commit()
+
+            assert captured[0]["probe_smart"] is True
+            assert captured[1]["probe_smart"] is False   # vòng 2 thôi dò
+            assert captured[0]["fetch_bitrate"] is True
+            assert captured[1]["fetch_bitrate"] is False  # bitrate đã cache
+            assert nvr.smart_supported is False
+            assert nvr.record_bitrate_kbps == 64000
+        await engine.dispose()
+
+    asyncio.run(run())
+
+
 def test_update_nvr_storage_fetch_error_keeps_state():
     """Fetch lỗi -> ok=False, KHÔNG ghi ổ/đổi trạng thái (tránh resolve nhầm)."""
     async def run():

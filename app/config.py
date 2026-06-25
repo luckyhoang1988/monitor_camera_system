@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     nvr_check_interval_fast: int = 30
     # Quét sức khỏe lưu trữ (HDD/RAID/S.M.A.R.T) — chậm hơn vì ít biến động.
     storage_check_interval: int = 900
+    # Bitrate ghi đổi rất chậm -> chỉ lấy lại mỗi N giây (mặc định 1 ngày), các vòng
+    # quét lưu trữ khác dùng giá trị đã cache -> đỡ 1 request/NVR mỗi vòng.
+    bitrate_refresh_sec: int = 86400
 
     # --- Tham số kiểm tra ---
     request_timeout: int = 10  # timeout tổng (giây) — dùng cho ping/port và fallback

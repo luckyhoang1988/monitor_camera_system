@@ -277,6 +277,13 @@ async def update_nvr_storage(
     password = decrypt_password(nvr.password_enc)
     prev_status = StorageStatus(nvr.storage_status)
 
+    # Giảm request: thôi dò S.M.A.R.T nếu đã biết firmware không hỗ trợ; chỉ lấy lại
+    # bitrate khi chưa có hoặc đã quá hạn cache (bitrate đổi rất chậm).
+    probe_smart = nvr.smart_supported is not False
+    fetch_bitrate = nvr.bitrate_checked_at is None or (
+        _now() - nvr.bitrate_checked_at
+    ) > timedelta(seconds=settings.bitrate_refresh_sec)
+
     storage, error = await fetch_nvr_storage(
         host=nvr.host,
         username=nvr.username,
@@ -287,6 +294,8 @@ async def update_nvr_storage(
         tls_fingerprint=nvr.tls_fingerprint,
         retries=settings.request_retries,
         retry_backoff_base=settings.retry_backoff_base,
+        probe_smart=probe_smart,
+        fetch_bitrate=fetch_bitrate,
     )
     if error or storage is None:
         if error:
@@ -333,10 +342,16 @@ async def update_nvr_storage(
     nvr.hdd_count = ev.hdd_count
     nvr.hdd_healthy_count = ev.hdd_healthy_count
     nvr.raid_status = ev.raid_status
-    # Dự đoán số ngày lưu trữ từ dung lượng + tổng bitrate ghi (best-effort).
-    nvr.record_bitrate_kbps = storage.total_bitrate_kbps
+    # Nhớ kết quả dò S.M.A.R.T để vòng sau khỏi dò nếu firmware không hỗ trợ.
+    if storage.smart_supported is not None:
+        nvr.smart_supported = storage.smart_supported
+    # Bitrate: chỉ cập nhật khi vừa lấy mới; ngược lại giữ giá trị cache.
+    if fetch_bitrate and storage.total_bitrate_kbps is not None:
+        nvr.record_bitrate_kbps = storage.total_bitrate_kbps
+        nvr.bitrate_checked_at = now
+    # Dự đoán số ngày lưu trữ từ dung lượng + bitrate (cache hoặc vừa lấy).
     nvr.retention_days_est = estimate_retention_days(
-        ev.total_mb, storage.total_bitrate_kbps
+        ev.total_mb, nvr.record_bitrate_kbps
     )
     nvr.storage_last_checked_at = now
     nvr.storage_last_error = None

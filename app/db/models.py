@@ -75,6 +75,12 @@ class NVRDevice(Base):
     # Dự đoán số ngày lưu trữ = dung lượng / tổng bitrate ghi (ghi liên tục 24/7).
     record_bitrate_kbps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retention_days_est: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Bitrate đổi rất chậm -> chỉ lấy lại định kỳ (cache mốc lần lấy cuối).
+    bitrate_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # None=chưa rõ, False=firmware không trả S.M.A.R.T -> thôi dò (đỡ request).
+    smart_supported: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     storage_last_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

@@ -149,6 +149,9 @@ class StorageInfo:
     raid_status: str | None = None  # None = không có RAID / không hỗ trợ
     # Tổng bitrate main-stream của mọi camera (kbps) — để dự đoán số ngày lưu trữ.
     total_bitrate_kbps: int | None = None
+    # Có ổ nào trả S.M.A.R.T không: True=có, False=đã dò nhưng firmware không hỗ trợ,
+    # None=không dò lần này. Dùng để THÔI dò lần sau (đỡ ~16 request/NVR/vòng).
+    smart_supported: bool | None = None
 
 
 @dataclass
@@ -264,14 +267,17 @@ class ISAPIClient:
 
         return list(channels.values())
 
-    async def get_storage_info(self, client: httpx.AsyncClient) -> StorageInfo:
+    async def get_storage_info(
+        self, client: httpx.AsyncClient, *, probe_smart: bool = True
+    ) -> StorageInfo:
         """Lấy trạng thái lưu trữ (HDD + RAID) của NVR.
 
         - /ISAPI/ContentMgmt/Storage -> <hddList><hdd>... và <raidList><raid>...
           Mỗi <hdd> có: id, hddName, capacity, freeSpace, status, property.
           `property` chứa "rw"/"R/W" -> ổ đang dùng để ghi hình.
         - S.M.A.R.T (health/nhiệt độ) ở endpoint phụ tùy firmware -> bọc try/except,
-          không hỗ trợ thì để None (giống cách get_channels bỏ qua endpoint thiếu).
+          không hỗ trợ thì để None. `probe_smart=False` để BỎ HẲN việc dò (caller biết
+          NVR này không hỗ trợ) -> tiết kiệm ~1 request/ổ mỗi vòng quét.
         """
         root = await self._get_xml(client, "/ISAPI/ContentMgmt/Storage")
 
@@ -319,19 +325,25 @@ class ISAPIClient:
             if raid_status:
                 break
 
-        # S.M.A.R.T best-effort: firmware không hỗ trợ -> bỏ qua, giữ None.
-        await self._enrich_smart(client, hdds)
+        # S.M.A.R.T best-effort: dò nếu chưa biết là không hỗ trợ.
+        smart_supported: bool | None = None
+        if probe_smart:
+            smart_supported = await self._enrich_smart(client, hdds) > 0
 
-        return StorageInfo(hdds=hdds, raid_status=raid_status)
+        return StorageInfo(
+            hdds=hdds, raid_status=raid_status, smart_supported=smart_supported
+        )
 
     async def _enrich_smart(
         self, client: httpx.AsyncClient, hdds: list[HddInfo]
-    ) -> None:
+    ) -> int:
         """Bổ sung sức khỏe S.M.A.R.T + nhiệt độ cho từng ổ (best-effort).
 
         Endpoint S.M.A.R.T khác nhau theo firmware và nhiều máy không có -> mọi lỗi
         (404/parse/timeout) đều nuốt, để các trường smart_health/temperature_c = None.
+        Trả số ổ đọc được S.M.A.R.T (0 = firmware không hỗ trợ).
         """
+        n_ok = 0
         for hdd in hdds:
             # Volume ảo (RAID array) không có S.M.A.R.T -> bỏ qua.
             if (hdd.hdd_type or "").lower().startswith("virtual"):
@@ -346,6 +358,8 @@ class ISAPIClient:
                 smart, "selfEvaluation"
             )
             hdd.temperature_c = _to_int(_find_text(smart, "temperature"))
+            n_ok += 1
+        return n_ok
 
     async def get_record_bitrate_kbps(
         self, client: httpx.AsyncClient

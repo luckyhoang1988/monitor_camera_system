@@ -217,12 +217,17 @@ async def fetch_nvr_storage(
     tls_fingerprint: str | None = None,
     retries: int = 0,
     retry_backoff_base: float = 0.5,
+    probe_smart: bool = True,
+    fetch_bitrate: bool = True,
 ) -> tuple[StorageInfo | None, str | None]:
     """Chỉ lấy trạng thái lưu trữ (HDD/RAID/S.M.A.R.T) của NVR (job storage).
 
     Song song với `fetch_nvr_channels`: dùng cho NVR đã Online, bỏ ping/port/deviceInfo
     để giảm tải. Trả về `(storage, error)`; lỗi chỉ trả error để caller log, KHÔNG đổi
     trạng thái NVR.
+
+    `probe_smart=False`: bỏ dò S.M.A.R.T (caller biết NVR không hỗ trợ).
+    `fetch_bitrate=False`: bỏ lấy bitrate (caller dùng giá trị đã cache) -> đỡ request.
     """
     client_obj = ISAPIClient(
         host,
@@ -238,14 +243,15 @@ async def fetch_nvr_storage(
         if use_https and tls_fingerprint:
             await _assert_fingerprint(host, port, tls_fingerprint, timeout)
         client = await get_client(client_obj.base_url)
-        storage = await client_obj.get_storage_info(client)
+        storage = await client_obj.get_storage_info(client, probe_smart=probe_smart)
         # Tổng bitrate ghi (best-effort) để dự đoán số ngày lưu — lỗi thì bỏ qua.
-        try:
-            storage.total_bitrate_kbps = await client_obj.get_record_bitrate_kbps(
-                client
-            )
-        except (TimeoutError, ISAPIError, httpx.HTTPError, OSError):
-            pass
+        if fetch_bitrate:
+            try:
+                storage.total_bitrate_kbps = (
+                    await client_obj.get_record_bitrate_kbps(client)
+                )
+            except (TimeoutError, ISAPIError, httpx.HTTPError, OSError):
+                pass
         return storage, None
     except (TimeoutError, ISAPIError, httpx.HTTPError, OSError) as exc:
         return None, str(exc)
