@@ -110,7 +110,16 @@
           <td>{{ row.camera.channel_no }}</td>
           <td>{{ row.camera.name or "—" }}</td>
           <td>{{ row.camera.camera_ip or "—" }}</td>
-          <td><span class="badge text-bg-{{ row.camera.current_status | badge }} blink">{{ row.camera.current_status }}</span></td>
+          <td>
+            {% if row.stale %}
+            <span class="badge text-bg-secondary blink"
+                  title="NVR đang {{ row.nvr_status }} — trạng thái camera là dữ liệu cũ">
+              NVR {{ row.nvr_status }}
+            </span>
+            {% else %}
+            <span class="badge text-bg-{{ row.camera.current_status | badge }} blink">{{ row.camera.current_status }}</span>
+            {% endif %}
+          </td>
           <td>{% if row.camera.offline_since %}{{ row.camera.offline_since | localtime }}{% else %}—{% endif %}</td>
           <td>{{ row.camera.last_checked_at | localtime }}</td>
           <td>

@@ -85,7 +85,9 @@ async def list_offline_cameras(
     """
     ref_ts = func.coalesce(CameraChannel.offline_since, CameraChannel.last_checked_at)
     stmt = (
-        select(CameraChannel, NVRDevice.name, NVRDevice.area)
+        select(
+            CameraChannel, NVRDevice.name, NVRDevice.area, NVRDevice.current_status
+        )
         .join(NVRDevice, CameraChannel.nvr_id == NVRDevice.id)
         .where(_camera_offline_condition())
         .order_by(NVRDevice.name, CameraChannel.channel_no)
@@ -94,10 +96,22 @@ async def list_offline_cameras(
         stmt = stmt.where(ref_ts >= start)
     if end is not None:
         stmt = stmt.where(ref_ts <= end)
-    return [
-        {"camera": cam, "nvr_name": nvr_name, "nvr_area": nvr_area}
-        for cam, nvr_name, nvr_area in (await session.execute(stmt)).all()
-    ]
+    rows = []
+    for cam, nvr_name, nvr_area, nvr_status in (await session.execute(stmt)).all():
+        # `stale=True`: camera vào danh sách KHÔNG phải vì tự nó offline mà vì NVR cha
+        # đang rớt -> trạng thái camera là dữ liệu cũ, không đáng tin. Caller (bảng web
+        # + Excel) hiển thị "NVR <trạng thái>" thay vì badge Online cũ gây hiểu nhầm.
+        stale = cam.current_status not in _CAMERA_BAD_STATUSES
+        rows.append(
+            {
+                "camera": cam,
+                "nvr_name": nvr_name,
+                "nvr_area": nvr_area,
+                "nvr_status": nvr_status,
+                "stale": stale,
+            }
+        )
+    return rows
 
 
 async def list_nvrs(

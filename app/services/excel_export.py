@@ -175,6 +175,11 @@ def build_offline_cameras_xlsx(rows: list[dict]) -> bytes:
 
     for row in rows:
         cam = row["camera"]
+        # Camera vào danh sách do NVR cha rớt (stale) -> trạng thái lưu là dữ liệu cũ;
+        # ghi "NVR <trạng thái>" thay vì "Online" cũ gây hiểu nhầm trong báo cáo offline.
+        status_text = (
+            f"NVR {row.get('nvr_status')}" if row.get("stale") else cam.current_status
+        )
         ws.append(
             [
                 row["nvr_name"],
@@ -182,7 +187,7 @@ def build_offline_cameras_xlsx(rows: list[dict]) -> bytes:
                 cam.channel_no,
                 cam.name or "—",
                 cam.camera_ip or "—",
-                cam.current_status,
+                status_text,
                 _localtime(cam.offline_since),
                 _localtime(cam.last_checked_at),
             ]
