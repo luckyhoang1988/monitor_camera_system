@@ -1,9 +1,10 @@
 """ORM models cho Chek_NVR (xem CLAUDE.md §7)."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -211,6 +212,29 @@ class NVRStorageLog(Base):
     checked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class DailyNvrUptime(Base):
+    """Rollup uptime NVR theo NGÀY (UTC) — giữ LÂU DÀI, không bị retention xóa.
+
+    Job đêm gộp nvr_status_logs của ngày hôm trước -> 1 dòng/NVR/ngày. Dùng cho báo
+    cáo dài hạn (sau khi log thô đã bị dọn theo log_retention_days) và truy vấn nhanh.
+    """
+
+    __tablename__ = "daily_nvr_uptime"
+    __table_args__ = (
+        Index("ix_daily_nvr_uptime_day_nvr", "day", "nvr_id", unique=True),
+        Index("ix_daily_nvr_uptime_nvr_day", "nvr_id", "day"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    day: Mapped[date] = mapped_column(Date)
+    nvr_id: Mapped[int] = mapped_column(
+        ForeignKey("nvr_devices.id", ondelete="CASCADE")
+    )
+    total_checks: Mapped[int] = mapped_column(Integer, default=0)
+    online_checks: Mapped[int] = mapped_column(Integer, default=0)
+    uptime_pct: Mapped[float] = mapped_column(Float, default=0.0)
 
 
 class Alert(Base):

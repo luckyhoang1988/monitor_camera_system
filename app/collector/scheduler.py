@@ -30,6 +30,7 @@ from app.services.event_bus import (
     event_bus,
 )
 from app.services.retention_service import purge_old_logs
+from app.services.rollup_service import rollup_yesterday
 from app.services.status_service import (
     check_and_update_nvr_health,
     log_cameras_unreachable,
@@ -279,6 +280,19 @@ async def purge_logs_job() -> None:
     )
 
 
+async def rollup_uptime_job() -> None:
+    """Gộp uptime NVR của hôm qua vào daily_nvr_uptime (chạy đêm, trước retention)."""
+    async with AsyncSessionLocal() as session:
+        try:
+            n = await rollup_yesterday(session)
+            await session.commit()
+        except Exception:  # noqa: BLE001 - lỗi rollup không được làm sập app
+            await session.rollback()
+            logger.exception("Lỗi khi rollup uptime ngày")
+            return
+    logger.info("Rollup uptime: đã gộp %d NVR cho hôm qua", n)
+
+
 def start_scheduler() -> AsyncIOScheduler:
     """Khởi tạo và chạy scheduler. Gọi trong lifespan của FastAPI."""
     global _scheduler
@@ -316,6 +330,16 @@ def start_scheduler() -> AsyncIOScheduler:
         "interval",
         seconds=settings.storage_check_interval,
         id="scan_storage",
+        max_instances=1,
+        coalesce=True,
+    )
+    # Rollup uptime ngày 02:50 (TRƯỚC khi dọn log) để giữ lịch sử dài hạn.
+    scheduler.add_job(
+        rollup_uptime_job,
+        "cron",
+        hour=2,
+        minute=50,
+        id="rollup_uptime",
         max_instances=1,
         coalesce=True,
     )
