@@ -53,6 +53,15 @@
              style="width: {{ used_pct }}%" aria-valuenow="{{ used_pct }}"
              aria-valuemin="0" aria-valuemax="100">{{ used_pct }}%</div>
       </div>
+      {% if storage_trend | length >= 2 %}
+      {# Sparkline % đã dùng theo các lần quét (xu hướng lưu trữ). #}
+      <div class="text-muted small">Xu hướng % đã dùng ({{ storage_trend | length }} lần quét)</div>
+      <svg width="100%" height="36" viewBox="0 0 100 36" preserveAspectRatio="none"
+           class="mb-2" style="border-bottom:1px solid #eee">
+        <polyline fill="none" stroke="#0d6efd" stroke-width="1.5"
+          points="{% for v in storage_trend %}{{ (loop.index0 / (storage_trend|length - 1) * 100) | round(2) }},{{ (36 - (v / 100 * 36)) | round(2) }} {% endfor %}" />
+      </svg>
+      {% endif %}
       <table class="table table-sm mb-0">
         <tr><th>Tổng dung lượng</th><td>{{ (nvr.storage_total_mb / 1024) | round(1) }} GB</td></tr>
         <tr><th>Còn trống</th><td>{{ (nvr.storage_free_mb / 1024) | round(1) }} GB</td></tr>

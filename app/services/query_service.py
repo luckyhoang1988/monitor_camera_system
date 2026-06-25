@@ -216,12 +216,17 @@ async def get_nvr_detail(session: AsyncSession, nvr_id: int) -> dict | None:
     # KHÔNG coi là cũ (chập chờn, camera giữ last-known). Cờ này điều khiển hiển thị
     # badge "(cũ)" + banner cảnh báo trong template.
     cams_stale = nvr.current_status in NVR_DOWN_STATE_VALUES
+    # Chuỗi % đã dùng theo thời gian TĂNG DẦN (cho sparkline xu hướng lưu trữ).
+    storage_trend = [
+        log.used_pct for log in reversed(storage_logs) if log.used_pct is not None
+    ]
     return {
         "nvr": nvr,
         "cameras": cameras,
         "logs": recent_logs,
         "hdds": hdds,
         "storage_logs": storage_logs,
+        "storage_trend": storage_trend,
         "cams_stale": cams_stale,
     }
 
