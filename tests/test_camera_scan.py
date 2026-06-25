@@ -168,7 +168,13 @@ def test_recovery_resolves_alert(monkeypatch):
             cam_row = await session.get(CameraChannel, cam.id)
             assert cam_row.offline_since is None
             assert await _open_alerts(session) == []
-            assert len(await _resolved_alerts(session)) == 1
+            # 2 alert resolved: alert offline được resolve + sự kiện recovery (báo Telegram).
+            resolved = await _resolved_alerts(session)
+            assert len(resolved) == 2
+            assert {a.type for a in resolved} == {
+                AlertType.CAMERA_OFFLINE.value,
+                AlertType.CAMERA_RECOVERED.value,
+            }
         await engine.dispose()
 
     asyncio.run(run())

@@ -82,3 +82,47 @@ def test_recovery_queues_telegram_every_time():
 
     asyncio.run(run())
     settings.telegram_enabled = False
+
+
+def test_camera_recovery_notifies_only_after_offline_alert():
+    """Camera online lại chỉ báo Telegram khi trước đó đang có alert offline mở."""
+    settings = get_settings()
+    settings.telegram_enabled = True
+
+    async def run():
+        engine, Session = await _make_session()
+        async with Session() as session:
+            nvr_id = 1
+
+            # Quét bình thường (0 camera offline) khi chưa từng có alert -> không báo.
+            await alert_service.process_camera_alerts(session, nvr_id, "NVR-A", 0)
+            assert not session.info.get(_QUEUE_KEY)
+
+            # Có camera offline đủ lâu -> tạo alert offline (xếp hàng cảnh báo).
+            await alert_service.process_camera_alerts(session, nvr_id, "NVR-A", 2)
+            session.info.pop(_QUEUE_KEY, None)  # mô phỏng flush
+
+            # Camera online lại -> resolve + báo recovery.
+            await alert_service.process_camera_alerts(session, nvr_id, "NVR-A", 0)
+            queue = list(session.info.get(_QUEUE_KEY, []))
+            assert any("online trở lại" in t for t in queue)
+
+            # Quét tiếp vẫn 0 offline (đã hết alert mở) -> không báo lại, tránh spam.
+            session.info.pop(_QUEUE_KEY, None)
+            await alert_service.process_camera_alerts(session, nvr_id, "NVR-A", 0)
+            assert not session.info.get(_QUEUE_KEY)
+
+            # Alert recovery camera ghi RESOLVED, không treo OPEN.
+            rows = (
+                await session.execute(
+                    select(Alert).where(
+                        Alert.type == AlertType.CAMERA_RECOVERED.value
+                    )
+                )
+            ).scalars().all()
+            assert len(rows) == 1
+            assert rows[0].status == AlertStatus.RESOLVED.value
+        await engine.dispose()
+
+    asyncio.run(run())
+    settings.telegram_enabled = False

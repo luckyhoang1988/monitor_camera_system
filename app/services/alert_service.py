@@ -190,4 +190,18 @@ async def process_camera_alerts(
             ),
         )
     else:
+        # Chỉ báo recovery khi trước đó thực sự đang có alert camera offline mở
+        # (chuyển từ trạng thái đã cảnh báo về bình thường), tránh spam mỗi lần quét.
+        had_alert = await _has_open_alert(
+            session, nvr_id, AlertType.CAMERA_OFFLINE
+        )
         await _resolve_open_alerts(session, nvr_id, AlertType.CAMERA_OFFLINE)
+        if had_alert:
+            await _create_alert(
+                session,
+                nvr_id=nvr_id,
+                alert_type=AlertType.CAMERA_RECOVERED,
+                severity=AlertSeverity.INFO,
+                message=f"NVR '{nvr_name}': camera đã online trở lại.",
+                is_event=True,
+            )

@@ -26,6 +26,7 @@ class AlertType(str, Enum):
     AUTH_ERROR = "auth_error"
     SLOW_RESPONSE = "slow_response"
     NVR_RECOVERED = "nvr_recovered"
+    CAMERA_RECOVERED = "camera_recovered"
 
 
 class AlertSeverity(str, Enum):
