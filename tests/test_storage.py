@@ -209,6 +209,36 @@ def test_estimate_retention_days():
     assert estimate_retention_days(1000, 0) is None
 
 
+# NVR có khay trống: 1 ổ ok + 2 khay "notexist" (capacity 0) phải bị loại.
+EMPTYBAY_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
+<storage xmlns="{NS}">
+  <hddList>
+    <hdd><id>1</id><hddType>SATA</hddType><status>ok</status>
+      <capacity>13000</capacity><freeSpace>5000</freeSpace><property>RW</property></hdd>
+    <hdd><id>2</id><hddType>SATA</hddType><status>notexist</status>
+      <capacity>0</capacity><freeSpace>0</freeSpace><property>RW</property></hdd>
+    <hdd><id>3</id><hddType>SATA</hddType><status>notexist</status>
+      <capacity>0</capacity><freeSpace>0</freeSpace><property>RW</property></hdd>
+  </hddList>
+</storage>
+"""
+
+
+class _EmptyBayClient:
+    async def get(self, path, auth=None):
+        if path == "/ISAPI/ContentMgmt/Storage":
+            return _FakeResp(text=EMPTYBAY_XML)
+        return _FakeResp(status_code=404, text="<err/>")
+
+
+def test_empty_bays_excluded():
+    storage = asyncio.run(_client().get_storage_info(_EmptyBayClient()))
+    assert len(storage.hdds) == 1  # 2 khay notexist bị loại
+    ev = evaluate_storage(storage, temp_warn_c=55)
+    assert ev.hdd_count == 1
+    assert ev.overall == StorageStatus.HEALTHY
+
+
 class _RaidClient:
     """Trả XML RAID (volume ảo + đĩa vật lý trùng id), 404 cho S.M.A.R.T."""
 

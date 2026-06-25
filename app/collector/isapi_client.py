@@ -287,6 +287,11 @@ class ISAPIClient:
                 hid = _child_text(hdd, "id")
                 if hid is None:
                     continue
+                status = _child_text(hdd, "status")
+                # "notexist" = khay trống (chưa gắn ổ), capacity=0 -> bỏ qua, không
+                # tính là ổ (tránh thổi phồng "số ổ" và bảng đầy dòng 0 GB).
+                if (status or "").lower() == "notexist":
+                    continue
                 prop = _child_text(hdd, "property")
                 is_recording = (
                     None
@@ -300,7 +305,7 @@ class ISAPIClient:
                         hdd_type=_child_text(hdd, "hddType"),
                         capacity_mb=_to_int(_child_text(hdd, "capacity")),
                         free_mb=_to_int(_child_text(hdd, "freeSpace")),
-                        status=_child_text(hdd, "status"),
+                        status=status,
                         is_recording=is_recording,
                     )
                 )
