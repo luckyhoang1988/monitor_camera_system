@@ -1,3 +1,5 @@
+{% set offline_custom_range = offline_from_date and offline_to_date %}
+{% set offline_range_qs = '?offline_from_date=' ~ offline_from_date ~ '&offline_to_date=' ~ offline_to_date if offline_custom_range else '' %}
 <h6 class="text-uppercase text-muted fw-semibold small mb-2">Đầu ghi (NVR)</h6>
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
@@ -60,11 +62,35 @@
     <span class="d-flex align-items-center gap-2">
       <span class="badge text-bg-light">{{ offline_cameras | length }}</span>
       {% if offline_cameras %}
-      <a href="/export/offline-cameras" class="btn btn-sm btn-light">
+      <a href="/export/offline-cameras{{ offline_range_qs }}" class="btn btn-sm btn-light">
         <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel
       </a>
       {% endif %}
     </span>
+  </div>
+  <div class="card-body p-2 border-bottom bg-light-subtle">
+    <form method="get" action="/" class="d-flex align-items-end gap-2 flex-wrap mb-0">
+      <div>
+        <label class="form-label form-label-sm mb-1 text-muted small">Từ ngày</label>
+        <input type="date" name="offline_from_date" value="{{ offline_from_date }}"
+               class="form-control form-control-sm" style="width:auto"
+               max="{{ offline_to_date or '' }}">
+      </div>
+      <div>
+        <label class="form-label form-label-sm mb-1 text-muted small">Đến ngày</label>
+        <input type="date" name="offline_to_date" value="{{ offline_to_date }}"
+               class="form-control form-control-sm" style="width:auto"
+               min="{{ offline_from_date or '' }}">
+      </div>
+      <button type="submit" class="btn btn-sm btn-primary">
+        <i class="bi bi-funnel me-1"></i>Lọc
+      </button>
+      {% if offline_custom_range %}
+      <a href="/" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-x-lg me-1"></i>Bỏ lọc
+      </a>
+      {% endif %}
+    </form>
   </div>
   <div class="card-body p-0">
     <table class="table table-sm table-hover mb-0 align-middle">

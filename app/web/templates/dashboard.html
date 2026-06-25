@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Tổng quan — Check_NVR{% endblock %}
 {% block content %}
+{% set offline_custom_range = offline_from_date and offline_to_date %}
+{% set offline_range_qs = '?offline_from_date=' ~ offline_from_date ~ '&offline_to_date=' ~ offline_to_date if offline_custom_range else '' %}
 <div class="d-flex align-items-center justify-content-between mb-4">
   <div>
     <h3 class="mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Tổng quan hệ thống</h3>
@@ -15,7 +17,7 @@
 </div>
 
 <!-- Tự động làm mới mỗi 30s qua HTMX polling (trạng thái + hiệu ứng nhấp nháy) -->
-<div id="dashboard-body" hx-get="/" hx-trigger="every 30s" hx-swap="innerHTML">
+<div id="dashboard-body" hx-get="/{{ offline_range_qs }}" hx-trigger="every 30s" hx-swap="innerHTML">
   {% include "partials/dashboard_body.html" %}
 </div>
 

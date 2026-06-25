@@ -41,19 +41,36 @@
   </div>
 
   <div class="col-md-8">
+    {# NVR không Online -> job quét camera ngừng chạy, nên trạng thái camera dưới đây
+       là dữ liệu ĐÓNG BĂNG ở lần quét cuối, KHÔNG phản ánh thời gian thực. Hiển thị
+       mờ (xám) + cảnh báo để khỏi hiểu nhầm "camera vẫn Online" trong khi NVR đã rớt. #}
+    {% set cams_stale = nvr.current_status != 'Online' %}
     <div class="card mb-3"><div class="card-body">
       <h6 class="card-title">Camera ({{ cameras | length }})</h6>
+      {% if cams_stale and cameras %}
+      <div class="alert alert-warning py-2 px-3 small mb-2" role="alert">
+        ⚠ NVR đang <strong>{{ nvr.current_status }}</strong> — không quét được camera.
+        Trạng thái dưới đây là dữ liệu cũ từ lần quét cuối ({{ cameras[0].last_checked_at | localtime }}),
+        <strong>không phản ánh thời gian thực</strong>.
+      </div>
+      {% endif %}
       <table class="table table-sm table-hover mb-0">
         <thead class="table-light"><tr>
           <th>Kênh</th><th>Tên</th><th>IP</th><th>Trạng thái</th><th>Kiểm tra cuối</th>
         </tr></thead>
-        <tbody>
+        <tbody{% if cams_stale %} class="text-muted"{% endif %}>
           {% for c in cameras %}
           <tr>
             <td>{{ c.channel_no }}</td>
             <td>{{ c.name or "—" }}</td>
             <td>{{ c.camera_ip or "—" }}</td>
-            <td><span class="badge text-bg-{{ c.current_status | badge }}">{{ c.current_status }}</span></td>
+            <td>
+              {% if cams_stale %}
+              <span class="badge text-bg-secondary" title="Dữ liệu cũ — NVR đang {{ nvr.current_status }}">{{ c.current_status }} (cũ)</span>
+              {% else %}
+              <span class="badge text-bg-{{ c.current_status | badge }}">{{ c.current_status }}</span>
+              {% endif %}
+            </td>
             <td>{{ c.last_checked_at | localtime }}</td>
           </tr>
           {% else %}

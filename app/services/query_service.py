@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,19 +24,27 @@ async def get_overview(session: AsyncSession) -> SystemOverview:
     ).all()
     nvr_counts = {status: n for status, n in nvr_rows}
 
-    # Đếm camera theo trạng thái.
-    cam_rows = (
-        await session.execute(
-            select(CameraChannel.current_status, func.count()).group_by(
-                CameraChannel.current_status
+    # Tổng số camera (mọi trạng thái).
+    camera_total = (
+        await session.scalar(select(func.count()).select_from(CameraChannel))
+    ) or 0
+
+    # Camera CHỈ tính Online khi bản thân nó Online VÀ NVR cha đang Online.
+    # Camera thuộc NVR không-Online có dữ liệu đóng băng (job camera ngừng quét) nên
+    # không đáng tin -> coi như offline (xem nvr_detail.html). Tránh thổi phồng
+    # "Camera Online"/uptime khi NVR đã rớt nhưng camera còn hiện trạng thái Online cũ.
+    camera_online = (
+        await session.scalar(
+            select(func.count())
+            .select_from(CameraChannel)
+            .join(NVRDevice, CameraChannel.nvr_id == NVRDevice.id)
+            .where(
+                CameraChannel.current_status == CameraStatus.ONLINE.value,
+                NVRDevice.current_status == NVRStatus.ONLINE.value,
             )
         )
-    ).all()
-    cam_counts = {status: n for status, n in cam_rows}
-
-    camera_total = sum(cam_counts.values())
-    camera_online = cam_counts.get(CameraStatus.ONLINE.value, 0)
-    camera_offline = cam_counts.get(CameraStatus.OFFLINE.value, 0)
+    ) or 0
+    camera_offline = camera_total - camera_online
     uptime = round(camera_online / camera_total * 100, 1) if camera_total else 0.0
 
     return SystemOverview(
@@ -49,19 +59,29 @@ async def get_overview(session: AsyncSession) -> SystemOverview:
     )
 
 
-async def list_offline_cameras(session: AsyncSession) -> list[dict]:
+async def list_offline_cameras(
+    session: AsyncSession,
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[dict]:
     """Camera đang mất tín hiệu (Offline / No Signal) kèm đầu ghi để nối tắt.
 
     Dùng cho khối "camera mất" trên trang Tổng quan: mỗi dòng biết thuộc NVR nào và
     link thẳng tới trang chi tiết NVR đó.
     """
     bad_statuses = (CameraStatus.OFFLINE.value, CameraStatus.NO_SIGNAL.value)
+    ref_ts = func.coalesce(CameraChannel.offline_since, CameraChannel.last_checked_at)
     stmt = (
         select(CameraChannel, NVRDevice.name, NVRDevice.area)
         .join(NVRDevice, CameraChannel.nvr_id == NVRDevice.id)
         .where(CameraChannel.current_status.in_(bad_statuses))
         .order_by(NVRDevice.name, CameraChannel.channel_no)
     )
+    if start is not None:
+        stmt = stmt.where(ref_ts >= start)
+    if end is not None:
+        stmt = stmt.where(ref_ts <= end)
     return [
         {"camera": cam, "nvr_name": nvr_name, "nvr_area": nvr_area}
         for cam, nvr_name, nvr_area in (await session.execute(stmt)).all()
@@ -95,12 +115,19 @@ async def list_nvrs(
     result = []
     for nvr in nvrs:
         counts = cam_map.get(nvr.id, {})
+        cam_total = sum(counts.values())
+        # NVR không Online -> dữ liệu camera đã đóng băng, coi toàn bộ là offline để
+        # nhất quán với khối tổng quan (không hiện "Online" cũ gây hiểu nhầm).
+        if nvr.current_status == NVRStatus.ONLINE.value:
+            cam_online = counts.get(CameraStatus.ONLINE.value, 0)
+        else:
+            cam_online = 0
         result.append(
             {
                 "nvr": nvr,
-                "cam_online": counts.get(CameraStatus.ONLINE.value, 0),
-                "cam_offline": counts.get(CameraStatus.OFFLINE.value, 0),
-                "cam_total": sum(counts.values()),
+                "cam_online": cam_online,
+                "cam_offline": cam_total - cam_online,
+                "cam_total": cam_total,
             }
         )
     return result

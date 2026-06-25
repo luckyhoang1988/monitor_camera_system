@@ -178,10 +178,23 @@ async def account_change_password(
 
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, session: AsyncSession = Depends(get_session)):
+async def dashboard(
+    request: Request,
+    offline_from_date: str | None = None,
+    offline_to_date: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
     overview = await get_overview(session)
-    offline_cameras = await list_offline_cameras(session)
-    ctx = {"overview": overview, "offline_cameras": offline_cameras}
+    off_start, off_end = _parse_report_range(offline_from_date, offline_to_date)
+    offline_cameras = await list_offline_cameras(
+        session, start=off_start, end=off_end
+    )
+    ctx = {
+        "overview": overview,
+        "offline_cameras": offline_cameras,
+        "offline_from_date": offline_from_date if off_start else "",
+        "offline_to_date": offline_to_date if off_end else "",
+    }
     # HTMX polling -> chỉ swap phần thân (cards + bảng camera mất tín hiệu).
     template = (
         "partials/dashboard_body.html"
@@ -192,9 +205,14 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
 
 
 @router.get("/export/offline-cameras")
-async def export_offline_cameras(session: AsyncSession = Depends(get_session)):
+async def export_offline_cameras(
+    offline_from_date: str | None = None,
+    offline_to_date: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
     """Xuất Excel danh sách camera đang mất tín hiệu (bảng trên trang Tổng quan)."""
-    rows = await list_offline_cameras(session)
+    off_start, off_end = _parse_report_range(offline_from_date, offline_to_date)
+    rows = await list_offline_cameras(session, start=off_start, end=off_end)
     content = build_offline_cameras_xlsx(rows)
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     filename = f"camera_mat_tin_hieu_{stamp}.xlsx"
